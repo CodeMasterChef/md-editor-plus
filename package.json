@@ -45,7 +45,7 @@
             "light",
             "dark"
           ],
-          "default": "auto",
+          "default": "light",
           "description": "Color theme override for Notion MD Viewer"
         }
       }
@@ -84,6 +84,7 @@
     "esbuild": "^0.21.0",
     "jest": "^29.0.0",
     "lowlight": "^3.1.0",
+    "tiptap-extension-global-drag-handle": "^0.1.18",
     "tiptap-markdown": "^0.8.10",
     "ts-jest": "^29.0.0",
     "typescript": "^5.4.0"
