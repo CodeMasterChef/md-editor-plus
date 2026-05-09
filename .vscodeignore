@@ -17,6 +17,7 @@ esbuild.config.js
 .eslintrc*
 package-lock.json
 demo.md
+PUBLISHING.md
 media/icon.svg
 media/header.svg
 media/claude-icon.svg
