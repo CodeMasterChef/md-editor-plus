@@ -1,58 +1,127 @@
 {
-  "name": "notion-md-viewer",
-  "displayName": "Notion MD Viewer",
-  "description": "View and edit Markdown files with a Notion-style interface",
+  "name": "md-editor-plus",
+  "displayName": "MD Editor Plus - Notion-style markdown block editor",
+  "description": "A Notion-style block-based Markdown editor and viewer. Edit .md files inline with rich blocks, drag-to-reorder, slash commands, and a polished light/dark theme.",
   "version": "0.1.0",
-  "publisher": "notion-md-viewer",
+  "publisher": "aviranrevach",
+  "license": "MIT",
+  "author": {
+    "name": "Aviran Revach",
+    "email": "aviran@atera.com"
+  },
+  "homepage": "https://github.com/aviranrevach/md-viewer#readme",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/aviranrevach/md-viewer.git"
+  },
+  "bugs": {
+    "url": "https://github.com/aviranrevach/md-viewer/issues"
+  },
   "engines": {
     "vscode": "^1.74.0"
   },
-  "icon": "MDnotion.png",
+  "icon": "media/icon.png",
+  "galleryBanner": {
+    "color": "#0F0F0F",
+    "theme": "dark"
+  },
   "categories": [
+    "Notebooks",
+    "Visualization",
     "Other"
+  ],
+  "keywords": [
+    "markdown",
+    "md",
+    "editor",
+    "viewer",
+    "wysiwyg",
+    "block editor",
+    "notion",
+    "notion-style",
+    "preview",
+    "notes",
+    "mdx"
   ],
   "activationEvents": [],
   "main": "./dist/extension.js",
   "contributes": {
     "customEditors": [
       {
-        "viewType": "notion-md-viewer",
-        "displayName": "Notion MD Viewer",
+        "viewType": "md-editor-plus.editor",
+        "displayName": "MD Editor Plus",
         "selector": [
-          {
-            "filenamePattern": "*.md"
-          }
+          { "filenamePattern": "*.md" },
+          { "filenamePattern": "*.markdown" },
+          { "filenamePattern": "*.mdown" },
+          { "filenamePattern": "*.mkd" },
+          { "filenamePattern": "*.mdx" }
         ],
         "priority": "default"
       }
     ],
     "commands": [
       {
-        "command": "notion-md.openSourceView",
-        "title": "Notion MD: Open Source View"
+        "command": "mdEditorPlus.openSourceView",
+        "title": "MD Editor Plus: Open Source View"
       },
       {
-        "command": "notion-md.openNotionView",
-        "title": "Notion MD: Open Notion View"
+        "command": "mdEditorPlus.openBlockView",
+        "title": "MD Editor Plus: Open Block View"
       }
     ],
     "configuration": {
-      "title": "Notion MD Viewer",
+      "title": "MD Editor Plus",
       "properties": {
-        "notionMdViewer.theme": {
+        "mdEditorPlus.theme": {
           "type": "string",
-          "enum": [
-            "auto",
-            "light",
-            "dark"
-          ],
+          "enum": ["auto", "light", "sepia", "claude", "dark"],
           "default": "light",
-          "description": "Color theme override for Notion MD Viewer"
+          "description": "Default color theme (saved via 'Save view as default')"
         },
-        "notionMdViewer.alwaysDarkCode": {
+        "mdEditorPlus.font": {
+          "type": "string",
+          "enum": ["sans", "serif", "mono"],
+          "default": "sans",
+          "description": "Default font family"
+        },
+        "mdEditorPlus.textSize": {
+          "type": "string",
+          "enum": ["s", "m", "l", "xl"],
+          "default": "m",
+          "description": "Default text size"
+        },
+        "mdEditorPlus.pageWidth": {
+          "type": "number",
+          "default": 800,
+          "minimum": 400,
+          "maximum": 2400,
+          "description": "Default page width in pixels"
+        },
+        "mdEditorPlus.fullWidth": {
+          "type": "boolean",
+          "default": false,
+          "description": "Default to full window width"
+        },
+        "mdEditorPlus.alwaysDarkCode": {
           "type": "boolean",
           "default": false,
           "description": "Render code blocks with a dark background regardless of page theme"
+        },
+        "mdEditorPlus.alwaysDarkSource": {
+          "type": "boolean",
+          "default": false,
+          "description": "Render the raw source view with a dark background regardless of page theme"
+        },
+        "mdEditorPlus.sourceFullWidth": {
+          "type": "boolean",
+          "default": false,
+          "description": "Always render the source (Code) view at full window width"
+        },
+        "mdEditorPlus.shortenCodeSnippets": {
+          "type": "boolean",
+          "default": false,
+          "description": "Collapse long code snippets to a preview with a Show more button"
         }
       }
     }
