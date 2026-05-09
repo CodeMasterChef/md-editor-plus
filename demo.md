@@ -9,7 +9,7 @@ created: 2026-05-09
 
 A Notion-style markdown block editor for VS Code. **Every feature below is live in this file** — open the block view to feel it, switch to **Code** view to see how it round-trips to plain Markdown.
 
-![MD Editor Plus](media/header.svg)
+![MD Editor Plus rendering a Markdown file with the bubble menu open](media/MD-editor-plus.png)
 
 > [!TIP]
 > The pill at the very top says **FRONTMATTER · 5 lines** — click it to jump straight into the YAML block in Code view.
