@@ -1,7 +1,7 @@
 import lightCss from './styles/notion-light.css';
 import darkCss from './styles/notion-dark.css';
 import editorCss from './styles/editor.css';
-import { createEditor, updateContent, createSourceEditor, updateSourceContent, getSourceMarkdown, setSourceViewSwitcher } from './editor';
+import { createEditor, updateContent, createSourceEditor, updateSourceContent, getSourceMarkdown, getCurrentMarkdown, setSourceViewSwitcher, setMediaBaseUri } from './editor';
 import { initTheme, applyTheme, ThemeSetting } from './theme';
 import { initTooltips } from './tooltip';
 import { common, createLowlight } from 'lowlight';
@@ -51,6 +51,9 @@ declare function acquireVsCodeApi(): {
 };
 
 const vscode = acquireVsCodeApi();
+// Expose the handle so other modules (like bubbleMenu.ts) can post messages
+// without trying to call acquireVsCodeApi() a second time (which throws).
+(window as unknown as { __mdViewerVscode?: typeof vscode }).__mdViewerVscode = vscode;
 
 interface SavedDefaults {
   theme?: ThemeSetting;
@@ -63,7 +66,7 @@ interface SavedDefaults {
   sourceFullWidth?: boolean;
   shortenCodeSnippets?: boolean;
 }
-interface InitMessage   { type: 'init';   markdown: string; defaults: SavedDefaults; }
+interface InitMessage   { type: 'init';   markdown: string; defaults: SavedDefaults; mediaBaseUri?: string; }
 interface UpdateMessage { type: 'update'; markdown: string; }
 type HostMessage = InitMessage | UpdateMessage;
 
@@ -120,6 +123,15 @@ function init(): void {
   let sourceEditorReady = false;
 
   function ensureSourceEditor(): void {
+    // Pull the live markdown straight from the main editor (bypasses the
+    // 500ms onUpdate debounce) so the Code view always reflects the latest
+    // edit — even if the user toggles immediately after editing.
+    const fresh = editorReady ? getCurrentMarkdown() : currentMarkdown;
+    if (fresh !== currentMarkdown) {
+      currentMarkdown = fresh;
+      lastSentMarkdown = normalizeMd(fresh);
+      vscode.postMessage({ type: 'edit', markdown: fresh });
+    }
     if (sourceEditorReady) {
       updateSourceContent(currentMarkdown);
       return;
@@ -605,6 +617,7 @@ function init(): void {
 
     if (msg.type === 'init') {
       currentMarkdown = msg.markdown;
+      if (msg.mediaBaseUri) setMediaBaseUri(msg.mediaBaseUri);
       savedDefaults = { ...FACTORY_DEFAULTS, ...(msg.defaults ?? {}) };
       applyDefaults(msg.defaults ?? {});
       refreshDefaultsButtons();

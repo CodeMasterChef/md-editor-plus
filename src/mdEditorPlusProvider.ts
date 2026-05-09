@@ -23,18 +23,29 @@ export class MdEditorPlusProvider implements vscode.CustomTextEditorProvider {
     webviewPanel: vscode.WebviewPanel,
     _token: vscode.CancellationToken
   ): Promise<void> {
+    const docDir = vscode.Uri.joinPath(document.uri, '..');
+    const wsFolder = vscode.workspace.getWorkspaceFolder(document.uri);
+    const localResourceRoots: vscode.Uri[] = [
+      vscode.Uri.joinPath(this._extensionUri, 'dist'),
+      docDir,
+    ];
+    if (wsFolder) localResourceRoots.push(wsFolder.uri);
+
     webviewPanel.webview.options = {
       enableScripts: true,
-      localResourceRoots: [vscode.Uri.joinPath(this._extensionUri, 'dist')],
+      localResourceRoots,
     };
 
     webviewPanel.webview.html = this._getHtml(webviewPanel.webview, document);
+
+    const mediaBaseUri = webviewPanel.webview.asWebviewUri(docDir).toString().replace(/\/?$/, '/');
 
     const sendInit = () => {
       const cfg = vscode.workspace.getConfiguration('mdEditorPlus');
       webviewPanel.webview.postMessage({
         type: 'init',
         markdown: document.getText(),
+        mediaBaseUri,
         defaults: {
           theme:               cfg.get<string>('theme', 'light'),
           font:                cfg.get<string>('font', 'sans'),
@@ -106,6 +117,12 @@ export class MdEditorPlusProvider implements vscode.CustomTextEditorProvider {
       }
       if (msg.type === 'openInFinder') {
         await vscode.commands.executeCommand('revealFileInOS', document.uri);
+      }
+      if (msg.type === 'openExternal') {
+        const url = (msg as unknown as { url?: unknown }).url;
+        if (typeof url === 'string') {
+          try { await vscode.env.openExternal(vscode.Uri.parse(url)); } catch { /* ignore */ }
+        }
       }
       if (msg.type === 'copyContent') {
         await vscode.env.clipboard.writeText(document.getText());

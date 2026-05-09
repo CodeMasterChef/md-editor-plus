@@ -7,6 +7,7 @@ import TableRow from '@tiptap/extension-table-row';
 import TableHeader from '@tiptap/extension-table-header';
 import TableCell from '@tiptap/extension-table-cell';
 import Image from '@tiptap/extension-image';
+import { mergeAttributes } from '@tiptap/core';
 import Link from '@tiptap/extension-link';
 import CodeBlock from './extensions/codeBlock';
 import Underline from '@tiptap/extension-underline';
@@ -30,6 +31,32 @@ let _frontmatter = '';
 let _fmIndicator: HTMLElement | null = null;
 let _fmHostEl: HTMLElement | null = null;
 let _onSwitchToSource: (() => void) | null = null;
+let _mediaBaseUri = '';
+
+export function setMediaBaseUri(uri: string): void {
+  _mediaBaseUri = uri || '';
+}
+
+// Resolve a relative image src against the document's directory so the VS Code
+// webview can actually load it. Absolute URLs, data: URIs and protocol-relative
+// URLs pass through untouched.
+function resolveImageSrc(src: string): string {
+  if (!src || !_mediaBaseUri) return src;
+  if (/^(?:[a-z][a-z0-9+.-]*:|\/\/)/i.test(src)) return src;
+  try {
+    return new URL(src, _mediaBaseUri).href;
+  } catch {
+    return src;
+  }
+}
+
+const ResolvedImage = Image.extend({
+  renderHTML({ HTMLAttributes }) {
+    const out: Record<string, unknown> = { ...HTMLAttributes };
+    if (typeof out.src === 'string') out.src = resolveImageSrc(out.src);
+    return ['img', mergeAttributes(this.options.HTMLAttributes, out)];
+  },
+});
 
 export function setSourceViewSwitcher(fn: () => void): void {
   _onSwitchToSource = fn;
@@ -97,7 +124,7 @@ export function createEditor(
       TableRow,
       TableHeader,
       TableCell,
-      Image,
+      ResolvedImage,
       Link.configure({ openOnClick: false }),
       Underline,
       TextStyle,
