@@ -119,6 +119,9 @@ export function createEditor(
       BlockOutline,
       GlobalDragHandle.configure({ dragHandleWidth: 48 }),
     ],
+    editorProps: {
+      attributes: { spellcheck: 'true' },
+    },
     content: body,
     onUpdate({ editor }) {
       if (_debounceTimer) clearTimeout(_debounceTimer);
@@ -146,8 +149,24 @@ export function updateContent(markdown: string): void {
     console.error('[md-editor-plus] callout preprocess failed', err);
     next = split.body;
   }
+  // Preserve viewport scroll and best-effort cursor across the re-set. setContent
+  // re-renders the whole doc which would otherwise yank the user to the top.
+  const savedScroll = window.scrollY;
+  const sel = _editor.state.selection;
+  const savedFrom = sel.from;
+  const savedTo = sel.to;
   _editor.commands.setContent(next);
+  try {
+    const docSize = _editor.state.doc.content.size;
+    const clamp = (n: number) => Math.max(0, Math.min(n, Math.max(0, docSize - 1)));
+    _editor.commands.setTextSelection({ from: clamp(savedFrom), to: clamp(savedTo) });
+  } catch { /* selection restore is best-effort */ }
+  window.scrollTo(0, savedScroll);
   notifyFrontmatterChange();
+}
+
+export function setReadOnly(readOnly: boolean): void {
+  _editor?.setEditable(!readOnly);
 }
 
 // Reads the current markdown directly from the editor — bypasses the 500 ms

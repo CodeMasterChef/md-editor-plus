@@ -1,7 +1,7 @@
 import lightCss from './styles/notion-light.css';
 import darkCss from './styles/notion-dark.css';
 import editorCss from './styles/editor.css';
-import { createEditor, updateContent, createSourceEditor, updateSourceContent, getSourceMarkdown, getCurrentMarkdown, setFrontmatterChangeListener, setMediaBaseUri } from './editor';
+import { createEditor, updateContent, createSourceEditor, updateSourceContent, getSourceMarkdown, getCurrentMarkdown, setFrontmatterChangeListener, setMediaBaseUri, setReadOnly } from './editor';
 import { initTheme, applyTheme, ThemeSetting } from './theme';
 import { initTooltips } from './tooltip';
 import { buildHtmlExport } from './exportHtml';
@@ -68,9 +68,10 @@ interface SavedDefaults {
   sourceFullWidth?: boolean;
   shortenCodeSnippets?: boolean;
   outlineVisible?: boolean;
+  readOnly?: boolean;
 }
 interface InitMessage   { type: 'init';   markdown: string; defaults: SavedDefaults; mediaBaseUri?: string; }
-interface UpdateMessage { type: 'update'; markdown: string; }
+interface UpdateMessage { type: 'update'; markdown: string; source?: 'refresh' | 'external' }
 type HostMessage = InitMessage | UpdateMessage;
 
 type WidthMode  = 'normal' | 'full';
@@ -164,6 +165,8 @@ function init(): void {
   const alwaysDarkSourceToggle = document.getElementById('always-dark-source-toggle') as HTMLElement;
   const sourceFullWidthToggle = document.getElementById('source-full-width-toggle') as HTMLElement;
   const shortenSnippetsToggle = document.getElementById('shorten-snippets-toggle') as HTMLElement;
+  const readOnlyToggle        = document.getElementById('read-only-toggle')        as HTMLElement | null;
+  const refreshBtn            = document.getElementById('refresh-btn')              as HTMLElement | null;
 
   function setAlwaysDarkCode(on: boolean): void {
     document.documentElement.classList.toggle('code-always-dark', on);
@@ -209,9 +212,58 @@ function init(): void {
     setShortenSnippets(!shortenSnippetsToggle.classList.contains('on'));
   });
 
+  readOnlyToggle?.addEventListener('click', () => {
+    const next = !readOnlyToggle.classList.contains('on');
+    applyReadOnly(next);
+    vscode.postMessage({ type: 'saveReadOnly', value: next });
+  });
+
+  refreshBtn?.addEventListener('click', () => {
+    vscode.postMessage({ type: 'refresh' });
+  });
+
+  // External-edit conflict banner. Rendered once and toggled via 'visible'.
+  const conflictBanner = document.createElement('div');
+  conflictBanner.id = 'conflict-banner';
+  conflictBanner.className = 'conflict-banner';
+  conflictBanner.innerHTML = `
+    <span class="conflict-banner-icon" aria-hidden="true">⚠</span>
+    <span class="conflict-banner-text">This file was changed outside the editor while you have unsaved changes.</span>
+    <button type="button" class="conflict-banner-btn primary" id="conflict-reload">Reload from disk</button>
+    <button type="button" class="conflict-banner-btn" id="conflict-keep">Keep my version</button>
+  `;
+  document.body.appendChild(conflictBanner);
+  function showConflictBanner(): void {
+    conflictBanner.classList.add('visible');
+    document.documentElement.classList.add('conflict-active');
+  }
+  function hideConflictBanner(): void {
+    conflictBanner.classList.remove('visible');
+    document.documentElement.classList.remove('conflict-active');
+  }
+  conflictBanner.querySelector('#conflict-reload')?.addEventListener('click', () => {
+    if (pendingExternalMarkdown === null) { hideConflictBanner(); return; }
+    const md = pendingExternalMarkdown;
+    pendingExternalMarkdown = null;
+    hideConflictBanner();
+    currentMarkdown = md;
+    lastSentMarkdown = normalizeMd(md);
+    updateContent(md);
+    if (sourceMode && sourceEditorReady) updateSourceContent(md);
+  });
+  conflictBanner.querySelector('#conflict-keep')?.addEventListener('click', () => {
+    pendingExternalMarkdown = null;
+    hideConflictBanner();
+    // Push our current version back so disk catches up on next save.
+    const ours = getCurrentMarkdown();
+    lastSentMarkdown = normalizeMd(ours);
+    vscode.postMessage({ type: 'edit', markdown: ours });
+  });
+
   let editorReady     = false;
   let currentMarkdown = '';
   let lastSentMarkdown: string | null = null;
+  let pendingExternalMarkdown: string | null = null;
   let sourceMode      = false;
   let widthMode: WidthMode = 'normal';
 
@@ -682,6 +734,16 @@ function init(): void {
     setAlwaysDarkSource(Boolean(d.alwaysDarkSource));
     setSourceFullWidth(Boolean(d.sourceFullWidth));
     setShortenSnippets(Boolean(d.shortenCodeSnippets));
+    applyReadOnly(Boolean(d.readOnly));
+  }
+
+  function applyReadOnly(on: boolean): void {
+    document.documentElement.classList.toggle('read-only', on);
+    if (readOnlyToggle) {
+      readOnlyToggle.classList.toggle('on', on);
+      readOnlyToggle.setAttribute('aria-checked', String(on));
+    }
+    setReadOnly(on);
   }
 
   let savedDefaults: SavedDefaults = { ...FACTORY_DEFAULTS };
@@ -799,6 +861,19 @@ function init(): void {
         if (sourceMode && sourceEditorReady) updateSourceContent(msg.markdown);
         return;
       }
+      // Conflict detection: the external content differs from what we last
+      // sent, AND the editor has unsent local edits queued in the 500ms
+      // debounce. Don't silently overwrite — surface a banner so the user
+      // picks. The 'refresh' source skips this check (user-initiated reload).
+      const editorCurrent = normalizeMd(getCurrentMarkdown());
+      const localDirty = lastSentMarkdown !== null && editorCurrent !== lastSentMarkdown;
+      if (localDirty && msg.source !== 'refresh') {
+        pendingExternalMarkdown = msg.markdown;
+        showConflictBanner();
+        return;
+      }
+      pendingExternalMarkdown = null;
+      hideConflictBanner();
       currentMarkdown = msg.markdown;
       updateContent(msg.markdown);
       if (sourceMode && sourceEditorReady) updateSourceContent(msg.markdown);

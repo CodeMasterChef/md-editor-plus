@@ -119,6 +119,7 @@ export class MdEditorPlusProvider implements vscode.CustomTextEditorProvider {
           sourceFullWidth:     cfg.get<boolean>('sourceFullWidth', false),
           shortenCodeSnippets: cfg.get<boolean>('shortenCodeSnippets', false),
           outlineVisible:      cfg.get<boolean>('outlineVisible', false),
+          readOnly:            cfg.get<boolean>('readOnly', false),
         },
       });
     };
@@ -200,6 +201,24 @@ export class MdEditorPlusProvider implements vscode.CustomTextEditorProvider {
         if (typeof value !== 'boolean') return;
         const cfg = vscode.workspace.getConfiguration('mdEditorPlus');
         await cfg.update('outlineVisible', value, vscode.ConfigurationTarget.Global);
+        return;
+      }
+      if (msg.type === 'saveReadOnly') {
+        const value = (msg as unknown as { value?: unknown }).value;
+        if (typeof value !== 'boolean') return;
+        const cfg = vscode.workspace.getConfiguration('mdEditorPlus');
+        await cfg.update('readOnly', value, vscode.ConfigurationTarget.Global);
+        return;
+      }
+      if (msg.type === 'refresh') {
+        // Re-send the current TextDocument content to the webview. The file
+        // watcher already keeps the TextDocument in sync with disk for clean
+        // docs; this forces a resync if the webview suspects it has drifted.
+        webviewPanel.webview.postMessage({
+          type: 'update',
+          markdown: document.getText(),
+          source: 'refresh',
+        });
         return;
       }
       if (msg.type === 'exportPdf') {
@@ -340,6 +359,8 @@ export class MdEditorPlusProvider implements vscode.CustomTextEditorProvider {
     const iFolder = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 256 256"><path d="M228,104a12,12,0,0,1-24,0V69l-59.51,59.51a12,12,0,0,1-17-17L187,52H152a12,12,0,0,1,0-24h64a12,12,0,0,1,12,12Zm-44,24a12,12,0,0,0-12,12v64H52V84h64a12,12,0,0,0,0-24H48A20,20,0,0,0,28,80V208a20,20,0,0,0,20,20H176a20,20,0,0,0,20-20V140A12,12,0,0,0,184,128Z"/></svg>`;
     const iDownload = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 256 256"><path d="M228,148v56a12,12,0,0,1-12,12H40a12,12,0,0,1-12-12V148a12,12,0,0,1,24,0v44H204V148a12,12,0,0,1,24,0ZM119.51,156.49a12,12,0,0,0,17,0l40-40a12,12,0,0,0-17-17L140,123V40a12,12,0,0,0-24,0v83L96.49,99.51a12,12,0,0,0-17,17Z"/></svg>`;
     const iOutline = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="none" stroke="currentColor" stroke-width="22" stroke-linecap="round" viewBox="0 0 256 256"><line x1="40" y1="64" x2="60" y2="64"/><line x1="100" y1="64" x2="216" y2="64"/><line x1="80" y1="128" x2="100" y2="128"/><line x1="140" y1="128" x2="216" y2="128"/><line x1="80" y1="192" x2="100" y2="192"/><line x1="140" y1="192" x2="216" y2="192"/></svg>`;
+    const iRefresh = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 256 256"><path d="M232,72v56a8,8,0,0,1-8,8H168a8,8,0,0,1,0-16h36.87L182.4,97.53A79.93,79.93,0,0,0,49.13,131.7a8,8,0,1,1-15.74-2.94A95.93,95.93,0,0,1,193.71,86.21L216,108.5V72a8,8,0,0,1,16,0Zm-9.39,113.24A8,8,0,0,0,213,191.3,79.93,79.93,0,0,1,73.6,158.47L96.06,136H56a8,8,0,0,1,0-16h56a8,8,0,0,1,8,8v56a8,8,0,0,1-16,0V147.5L84.92,169.79a95.94,95.94,0,0,0,167.74-39.41A8,8,0,0,0,247.6,124.7,95.86,95.86,0,0,1,222.61,185.24Z"/></svg>`;
+    const iLock = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 256 256"><path d="M208,80H176V56a48,48,0,0,0-96,0V80H48A16,16,0,0,0,32,96V208a16,16,0,0,0,16,16H208a16,16,0,0,0,16-16V96A16,16,0,0,0,208,80ZM96,56a32,32,0,0,1,64,0V80H96Zm112,152H48V96H208V208Z"/></svg>`;
     const iPdf = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 256 256"><path d="M48,28A20,20,0,0,0,28,48V208a20,20,0,0,0,20,20H208a20,20,0,0,0,20-20V96a12,12,0,0,0-3.51-8.49l-56-56A12,12,0,0,0,160,28Zm4,24h96V96a12,12,0,0,0,12,12h44V204H52ZM168,57l27,27H168ZM112,160v8h8a12,12,0,0,1,0,24h-8v8a12,12,0,0,1-24,0V148a12,12,0,0,1,12-12h20a12,12,0,0,1,0,24Zm68,12a40,40,0,0,1-40,40h-4a12,12,0,0,1-12-12V148a12,12,0,0,1,12-12h4A40,40,0,0,1,180,176Zm-24-4a16,16,0,0,0-8-13.86V178a16,16,0,0,0,8-6Z"/></svg>`;
     const iDevices = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 256 256"><path d="M224,72H212V64a28,28,0,0,0-28-28H40A28,28,0,0,0,12,64v88a28,28,0,0,0,28,28h96v12a28,28,0,0,0,28,28h60a28,28,0,0,0,28-28V100A28,28,0,0,0,224,72ZM40,156a4,4,0,0,1-4-4V64a4,4,0,0,1,4-4H184a4,4,0,0,1,4,4v8H164a28,28,0,0,0-28,28v56Zm188,36a4,4,0,0,1-4,4H164a4,4,0,0,1-4-4V100a4,4,0,0,1,4-4h60a4,4,0,0,1,4,4ZM124,208a12,12,0,0,1-12,12H88a12,12,0,0,1,0-24h24A12,12,0,0,1,124,208Zm88-84a12,12,0,0,1-12,12H188a12,12,0,0,1,0-24h12A12,12,0,0,1,212,124Z"/></svg>`;
     const iArrowsH = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 256 256"><path d="M240.49,136.49l-32,32a12,12,0,0,1-17-17L203,140H53l11.52,11.51a12,12,0,0,1-17,17l-32-32a12,12,0,0,1,0-17l32-32a12,12,0,1,1,17,17L53,116H203l-11.52-11.51a12,12,0,0,1,17-17l32,32A12,12,0,0,1,240.49,136.49Z"/></svg>`;
@@ -374,6 +395,7 @@ export class MdEditorPlusProvider implements vscode.CustomTextEditorProvider {
     <button class="toolbar-icon" id="outline-btn" data-tip="Outline (⌘⇧O)">${iOutline}</button>
     <span class="toolbar-filename" id="toolbar-filename" title="${fileName}">${fileName}</span>
     <span class="toolbar-spacer"></span>
+    <button class="toolbar-icon" id="refresh-btn" data-tip="Reload from disk">${iRefresh}</button>
     <button class="toolbar-icon" id="settings-btn" data-tip="Display settings">${iAa}</button>
     <button class="toolbar-icon" id="actions-btn" data-tip="More actions">${iDots}</button>
   </div>
@@ -460,6 +482,15 @@ export class MdEditorPlusProvider implements vscode.CustomTextEditorProvider {
         <span class="settings-row-icon">${iCode}</span>
         <span class="settings-row-label">Shorten Code Snippets</span>
         <button class="toggle-switch" id="shorten-snippets-toggle" role="switch" aria-checked="false"></button>
+      </div>
+    </div>
+    <div class="settings-divider"></div>
+    <div class="settings-section">
+      <div class="settings-label">Editing</div>
+      <div class="settings-row" data-tip="When on, the editor is view-only — typing and structural edits are blocked">
+        <span class="settings-row-icon">${iLock}</span>
+        <span class="settings-row-label">Read only</span>
+        <button class="toggle-switch" id="read-only-toggle" role="switch" aria-checked="false"></button>
       </div>
     </div>
     <div class="settings-divider"></div>

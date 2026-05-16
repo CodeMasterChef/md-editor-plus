@@ -2577,3 +2577,61 @@ html.source-mode-active.outline-visible #toolbar { padding-left: 0; }
   html.outline-visible #toolbar { padding-left: 0 !important; }
 }
 .is-printing .outline-panel { display: none !important; }
+
+/* ---------- External-change conflict banner ---------------------------- */
+.conflict-banner {
+  position: fixed;
+  top: 48px;
+  left: 0;
+  right: 0;
+  z-index: 49;
+  display: none;
+  align-items: center;
+  gap: 12px;
+  padding: 9px 16px;
+  background: #fff4ce;
+  border-bottom: 1px solid #e3c97a;
+  color: #5a4814;
+  font-size: 13px;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.06);
+}
+.conflict-banner.visible { display: flex; }
+html.outline-visible .conflict-banner { left: 240px; }
+.theme-dark .conflict-banner {
+  background: #3d3520;
+  border-bottom-color: #7a6532;
+  color: #f4dfa3;
+}
+.conflict-banner-icon { font-size: 14px; }
+.conflict-banner-text { flex: 1; line-height: 1.4; }
+.conflict-banner-btn {
+  padding: 4px 10px;
+  border: 1px solid currentColor;
+  border-radius: 4px;
+  background: transparent;
+  color: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.conflict-banner-btn:hover { background: rgba(0, 0, 0, 0.06); }
+.theme-dark .conflict-banner-btn:hover { background: rgba(255, 255, 255, 0.08); }
+.conflict-banner-btn.primary {
+  background: var(--link);
+  border-color: var(--link);
+  color: #fff;
+}
+.conflict-banner-btn.primary:hover {
+  filter: brightness(1.08);
+  background: var(--link);
+}
+/* Push the editor / outline panel below the banner while it's visible */
+html.conflict-active #toolbar { top: 0; }
+html.conflict-active .outline-panel { top: 84px; }
+html.conflict-active #editor,
+html.conflict-active #source-view { padding-top: 36px; }
+
+/* ---------- Read-only ------------------------------------------------- */
+html.read-only .ProseMirror { caret-color: transparent; }
+html.read-only .global-drag-handle,
+html.read-only .ProseMirror-menubar,
+html.read-only .block-handle { display: none !important; }
