@@ -133,6 +133,33 @@ function renderColumn(board: Board, col: { name: string; color: string }, mutate
     mutate(next);
   });
   el.appendChild(list);
+
+  const add = document.createElement('button');
+  add.type = 'button';
+  add.className = 'board-add-card';
+  add.textContent = '+ Add card';
+  add.addEventListener('click', () => {
+    const id = `c-${Math.random().toString(36).slice(2, 6)}`;
+    const newCard: Card = {
+      id,
+      values: { id, Title: '', Status: col.name },
+      body: '',
+    };
+    const nextBoard: Board = { ...board, cards: [...board.cards, newCard] };
+    mutate(nextBoard);
+    // After re-render, open the new card immediately so the user can type a title.
+    queueMicrotask(() => {
+      openBoardSidePanel(nextBoard, newCard, (next) => {
+        // Re-fetch the latest board snapshot via the mutate closure.
+        mutate({
+          ...nextBoard,
+          cards: nextBoard.cards.map((c) => (c.id === id ? next : c)),
+        });
+      });
+    });
+  });
+  el.appendChild(add);
+
   return el;
 }
 

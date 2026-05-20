@@ -147,3 +147,16 @@
 }
 .board-card.drop-before { border-top: 2px solid var(--color-blue, #2383e2); }
 .board-card.drop-after  { border-bottom: 2px solid var(--color-blue, #2383e2); }
+.board-add-card {
+  width: 100%;
+  margin-top: 8px;
+  padding: 6px 8px;
+  background: transparent;
+  border: 0;
+  border-radius: 4px;
+  font-size: 12px;
+  color: var(--text-muted, #6b6b66);
+  text-align: left;
+  cursor: pointer;
+}
+.board-add-card:hover { background: var(--block-bg, #f7f6f3); }
