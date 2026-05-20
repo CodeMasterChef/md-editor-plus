@@ -1,4 +1,5 @@
 import { Node, mergeAttributes } from '@tiptap/core';
+import { createBoardView } from '../boardBlock';
 
 const REGION_RE =
   /<!--\s*board:start[\s\S]*?<!--\s*board:end\s*-->/gi;
@@ -44,6 +45,23 @@ const Board = Node.create({
       'div',
       mergeAttributes({ 'data-board': '' }, HTMLAttributes),
     ];
+  },
+
+  addNodeView() {
+    return ({ node }) => {
+      const view = createBoardView(node.attrs.source as string);
+      return {
+        dom: view.dom,
+        update(updatedNode) {
+          if (updatedNode.type !== node.type) return false;
+          view.update(updatedNode.attrs.source as string);
+          return true;
+        },
+        ignoreMutation() {
+          return true;
+        },
+      };
+    };
   },
 
   addStorage() {

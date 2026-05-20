@@ -1,2 +1,54 @@
-/* src/webview/styles/board.css */
-.board-block { display: block; }
+.board-block {
+  display: block;
+  margin: 1.5em 0;
+  border: 1px solid var(--block-border, #e3e2de);
+  border-radius: 8px;
+  padding: 16px;
+  background: var(--block-bg, #f7f6f3);
+  position: relative;
+}
+.board-chrome {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+.board-name {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text, #1f1f1c);
+}
+.board-name.is-placeholder { color: var(--text-muted, #9b9b97); }
+.board-columns {
+  display: flex;
+  gap: 12px;
+  overflow-x: auto;
+}
+.board-column {
+  flex: 0 0 260px;
+  background: var(--block-bg-2, #fff);
+  border: 1px solid var(--block-border, #e3e2de);
+  border-radius: 6px;
+  padding: 10px;
+}
+.board-column-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  color: var(--text-muted, #6b6b66);
+  margin-bottom: 8px;
+}
+.board-column-dot {
+  width: 8px; height: 8px; border-radius: 50%; display: inline-block;
+}
+:root {
+  --color-gray: #9b9b97;
+  --color-blue: #2383e2;
+  --color-amber: #d97706;
+  --color-emerald: #059669;
+  --color-red: #dc2626;
+  --color-purple: #7c3aed;
+}
