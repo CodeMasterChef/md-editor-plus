@@ -97,8 +97,24 @@ function renderPanel(): void {
         currentOnChange(next);
       });
       row.appendChild(input);
+    } else if (field.type === 'status') {
+      const select = document.createElement('select');
+      select.className = 'board-panel-field-value';
+      for (const col of board.columns) {
+        const opt = document.createElement('option');
+        opt.value = col.name;
+        opt.textContent = col.name;
+        if (card.values.Status === col.name) opt.selected = true;
+        select.appendChild(opt);
+      }
+      select.addEventListener('change', () => {
+        if (!currentOnChange) return;
+        const next: Card = { ...card, values: { ...card.values, Status: select.value } };
+        currentOnChange(next);
+      });
+      row.appendChild(select);
     } else {
-      // text or person — single-line contenteditable
+      // text or person (and tags for now — Task 20 will replace)
       const value = document.createElement('span');
       value.className = 'board-panel-field-value';
       value.contentEditable = 'true';
