@@ -1,6 +1,7 @@
 import lightCss from './styles/notion-light.css';
 import darkCss from './styles/notion-dark.css';
 import editorCss from './styles/editor.css';
+import boardCss from './styles/board.css';
 import { createEditor, updateContent, createSourceEditor, updateSourceContent, getSourceMarkdown, getCurrentMarkdown, setFrontmatterChangeListener, setMediaBaseUri, setReadOnly } from './editor';
 import { initTheme, applyTheme, ThemeSetting } from './theme';
 import { initTooltips } from './tooltip';
@@ -106,7 +107,7 @@ const DEFAULT_KEYS = [
 
 function injectStyles(): void {
   const style = document.createElement('style');
-  style.textContent = lightCss + darkCss + editorCss;
+  style.textContent = lightCss + darkCss + editorCss + boardCss;
   document.head.appendChild(style);
 }
 

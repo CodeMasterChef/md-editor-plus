@@ -18,6 +18,7 @@ import GlobalDragHandle from 'tiptap-extension-global-drag-handle';
 import { common, createLowlight } from 'lowlight';
 import { Markdown } from 'tiptap-markdown';
 import Callout, { preprocessMarkdownCallouts } from './extensions/callout';
+import Board, { preprocessMarkdownBoards } from './extensions/board';
 import Toggle from './extensions/toggle';
 import BlockDirection from './extensions/blockDirection';
 import BlockOutline from './extensions/outline';
@@ -86,7 +87,7 @@ export function createEditor(
   _frontmatter = split.frontmatter;
   let body: string;
   try {
-    body = preprocessMarkdownCallouts(split.body);
+    body = preprocessMarkdownBoards(preprocessMarkdownCallouts(split.body));
   } catch (err) {
     console.error('[md-editor-plus] callout preprocess failed', err);
     body = split.body;
@@ -114,6 +115,7 @@ export function createEditor(
       Highlight.configure({ multicolor: true }),
       Markdown.configure({ transformCopiedText: true }),
       Callout,
+      Board,
       Toggle,
       BlockDirection,
       BlockOutline,
@@ -144,7 +146,7 @@ export function updateContent(markdown: string): void {
   _frontmatter = split.frontmatter;
   let next: string;
   try {
-    next = preprocessMarkdownCallouts(split.body);
+    next = preprocessMarkdownBoards(preprocessMarkdownCallouts(split.body));
   } catch (err) {
     console.error('[md-editor-plus] callout preprocess failed', err);
     next = split.body;
