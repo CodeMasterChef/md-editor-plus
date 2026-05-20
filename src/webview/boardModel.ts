@@ -29,6 +29,7 @@ export interface Board {
 }
 
 const START_RE = /<!--\s*board:start([\s\S]*?)-->/i;
+const BODY_RE = /<!--\s*board:body\s+id="([^"]+)"\s*-->/gi;
 
 function parseAttrs(raw: string): Record<string, string> {
   const out: Record<string, string> = {};
@@ -153,6 +154,21 @@ export function parseBoardSource(source: string): Board {
   );
 
   const table = findTableSlice(body);
+
+  // Parse board:body blocks and map them by card id.
+  const bodyById = new Map<string, string>();
+  const matches: { id: string; index: number; end: number }[] = [];
+  let bm: RegExpExecArray | null;
+  BODY_RE.lastIndex = 0;
+  while ((bm = BODY_RE.exec(body)) !== null) {
+    matches.push({ id: bm[1], index: bm.index, end: bm.index + bm[0].length });
+  }
+  for (let i = 0; i < matches.length; i++) {
+    const start = matches[i].end;
+    const stop = i + 1 < matches.length ? matches[i + 1].index : body.length;
+    bodyById.set(matches[i].id, body.slice(start, stop).replace(/^\n+/, '').replace(/\n+$/, '\n'));
+  }
+
   const cards: Card[] = [];
   if (table) {
     for (const row of table.rows) {
@@ -161,7 +177,7 @@ export function parseBoardSource(source: string): Board {
         values[h] = row[idx] ?? '';
       });
       const id = values.id || '';
-      cards.push({ id, values, body: '' });
+      cards.push({ id, values, body: bodyById.get(id) ?? '' });
     }
   }
 

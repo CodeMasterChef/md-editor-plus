@@ -140,3 +140,45 @@ describe('parseBoardSource — table rows', () => {
     expect(board.cards[0].values.Title).toBe('line1\nline2');
   });
 });
+
+describe('parseBoardSource — bodies', () => {
+  it('associates each body block with its card by id', () => {
+    const source = [
+      `<!-- board:start id="b1" -->`,
+      ``,
+      `| id | Title       |`,
+      `|----|-------------|`,
+      `| c1 | First card  |`,
+      `| c2 | Second card |`,
+      ``,
+      `<!-- board:body id="c1" -->`,
+      ``,
+      `## Goal`,
+      `Body for c1`,
+      ``,
+      `<!-- board:body id="c2" -->`,
+      ``,
+      `Brief body for c2.`,
+      ``,
+      `<!-- board:end -->`,
+    ].join('\n');
+
+    const board = parseBoardSource(source);
+    expect(board.cards[0].body.trim()).toBe('## Goal\nBody for c1');
+    expect(board.cards[1].body.trim()).toBe('Brief body for c2.');
+  });
+
+  it('leaves body empty for cards without a board:body block', () => {
+    const source = [
+      `<!-- board:start id="b1" -->`,
+      ``,
+      `| id | Title |`,
+      `|----|-------|`,
+      `| c1 | Hi    |`,
+      ``,
+      `<!-- board:end -->`,
+    ].join('\n');
+    const board = parseBoardSource(source);
+    expect(board.cards[0].body).toBe('');
+  });
+});
