@@ -29,3 +29,25 @@ describe('filterBlocks', () => {
     expect(ids).toContain('image');
   });
 });
+
+describe('board block picker entry', () => {
+  const board = BLOCK_DEFS.find((b) => b.id === 'board');
+
+  it('is registered', () => {
+    expect(board).toBeDefined();
+  });
+
+  it('has the expected label and aliases', () => {
+    expect(board!.label).toBe('Board');
+    expect(board!.aliases).toEqual(expect.arrayContaining(['kanban', 'tasks', 'project']));
+  });
+
+  it('lives in the "other" section', () => {
+    expect(board!.section).toBe('other');
+  });
+
+  it('declares an insert handler (not a sub-menu)', () => {
+    expect(typeof board!.insert).toBe('function');
+    expect(board!.subItems).toBeUndefined();
+  });
+});
