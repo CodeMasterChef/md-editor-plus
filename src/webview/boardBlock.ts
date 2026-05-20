@@ -1,5 +1,5 @@
 // src/webview/boardBlock.ts
-import { parseBoardSource, serializeBoard, type Board } from './boardModel';
+import { parseBoardSource, serializeBoard, type Board, type Card, type FieldDef } from './boardModel';
 
 export interface BoardView {
   dom: HTMLElement;
@@ -44,20 +44,122 @@ function renderColumns(board: Board): HTMLElement {
   const row = document.createElement('div');
   row.className = 'board-columns';
   for (const col of board.columns) {
-    row.appendChild(renderColumn(col));
+    row.appendChild(renderColumn(board, col));
   }
   return row;
 }
 
-function renderColumn(col: { name: string; color: string }): HTMLElement {
+function renderColumn(board: Board, col: { name: string; color: string }): HTMLElement {
   const el = document.createElement('div');
   el.className = `board-column color-${col.color}`;
+  el.dataset.column = col.name;
+
+  const cards = board.cards.filter((c) => (c.values.Status || '') === col.name);
+
   const head = document.createElement('div');
   head.className = 'board-column-head';
   head.innerHTML = `
     <span class="board-column-dot" style="background:var(--color-${col.color})"></span>
-    <span class="board-column-name">${col.name}</span>
+    <span class="board-column-name">${escapeHtml(col.name)}</span>
+    <span class="board-column-count">${cards.length}</span>
   `;
   el.appendChild(head);
+
+  const list = document.createElement('div');
+  list.className = 'board-card-list';
+  for (const card of cards) {
+    list.appendChild(renderCard(board, card));
+  }
+  el.appendChild(list);
   return el;
+}
+
+function renderCard(board: Board, card: Card): HTMLElement {
+  const el = document.createElement('div');
+  el.className = 'board-card';
+  el.dataset.cardId = card.id;
+
+  const title = document.createElement('div');
+  title.className = 'board-card-title';
+  title.textContent = card.values.Title || 'Untitled';
+  el.appendChild(title);
+
+  const preview = bodyPreview(card.body);
+  if (preview) {
+    const p = document.createElement('div');
+    p.className = 'board-card-preview';
+    p.textContent = preview;
+    el.appendChild(p);
+  }
+
+  const chips = renderChips(board, card);
+  if (chips) el.appendChild(chips);
+  return el;
+}
+
+function bodyPreview(body: string): string {
+  if (!body) return '';
+  // Strip simple markdown: leading #, *, -, [task] markers.
+  const lines = body
+    .split('\n')
+    .map((l) => l.replace(/^\s*[#>\-*]\s*\[.\]\s*/, '').replace(/^\s*[#>\-*]\s*/, '').trim())
+    .filter(Boolean);
+  return lines[0] || '';
+}
+
+function renderChips(board: Board, card: Card): HTMLElement | null {
+  const visible = board.fields.filter(
+    (f) => f.visibleOnCard && f.name !== 'Title' && f.name !== 'Status',
+  );
+  if (visible.length === 0) return null;
+  const row = document.createElement('div');
+  row.className = 'board-card-chips';
+  for (const f of visible) {
+    const val = (card.values[f.name] || '').trim();
+    if (!val) continue;
+    row.appendChild(renderChip(f, val));
+  }
+  return row.children.length ? row : null;
+}
+
+function renderChip(f: FieldDef, val: string): HTMLElement {
+  const chip = document.createElement('span');
+  chip.className = `board-chip chip-${f.type}`;
+  if (f.type === 'tags') {
+    chip.innerHTML = val
+      .split(',')
+      .map((t) => `<span class="board-tag">${escapeHtml(t.trim())}</span>`)
+      .join('');
+  } else if (f.type === 'date') {
+    chip.textContent = formatDate(val);
+    if (isOverdue(val)) chip.classList.add('is-overdue');
+  } else if (f.type === 'person') {
+    const initial = val.replace(/^@/, '').charAt(0).toUpperCase();
+    chip.innerHTML = `<span class="board-avatar">${escapeHtml(initial)}</span><span>${escapeHtml(val)}</span>`;
+  } else {
+    chip.textContent = val;
+  }
+  return chip;
+}
+
+function formatDate(iso: string): string {
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return iso;
+  return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+}
+
+function isOverdue(iso: string): boolean {
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return false;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  return d < today;
+}
+
+function escapeHtml(s: string): string {
+  return s
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
 }
