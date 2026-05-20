@@ -174,13 +174,11 @@ function renderPanel(): void {
   }
 
   const body = document.createElement('div');
-  body.className = 'board-panel-body';
+  body.className = 'board-panel-body editable';
   panel.appendChild(body);
-  if (card.body.trim()) {
-    const sub = createEditor(body, card.body, (() => { /* no-op for read-only */ }) as (markdown: string) => void);
-    sub.setEditable(false);
-  } else {
-    body.textContent = 'No description.';
-    body.classList.add('is-empty');
-  }
+  createEditor(body, card.body || '', (markdown: string) => {
+    if (!currentOnChange) return;
+    const next: Card = { ...card, body: markdown };
+    currentOnChange(next);
+  });
 }
