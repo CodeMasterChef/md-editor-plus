@@ -90,11 +90,48 @@ function renderColumn(board: Board, col: { name: string; color: string }, mutate
 
   const head = document.createElement('div');
   head.className = 'board-column-head';
-  head.innerHTML = `
-    <span class="board-column-dot" style="background:var(--color-${col.color})"></span>
-    <span class="board-column-name">${escapeHtml(col.name)}</span>
-    <span class="board-column-count">${cards.length}</span>
-  `;
+
+  const dot = document.createElement('span');
+  dot.className = 'board-column-dot';
+  dot.style.background = `var(--color-${col.color})`;
+  head.appendChild(dot);
+
+  const nameEl = document.createElement('span');
+  nameEl.className = 'board-column-name';
+  nameEl.contentEditable = 'true';
+  nameEl.textContent = col.name;
+  nameEl.addEventListener('blur', () => {
+    const newName = nameEl.textContent?.trim();
+    if (!newName || newName === col.name) {
+      nameEl.textContent = col.name;
+      return;
+    }
+    if (board.columns.some((c) => c.name === newName)) {
+      nameEl.textContent = col.name;
+      return;
+    }
+    const cols = board.columns.map((c) =>
+      c.name === col.name ? { ...c, name: newName } : c,
+    );
+    const cards2 = board.cards.map((c) =>
+      (c.values.Status || '') === col.name
+        ? { ...c, values: { ...c.values, Status: newName } }
+        : c,
+    );
+    mutate({ ...board, columns: cols, cards: cards2 });
+  });
+  nameEl.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      nameEl.blur();
+    }
+  });
+  head.appendChild(nameEl);
+
+  const count = document.createElement('span');
+  count.className = 'board-column-count';
+  count.textContent = String(cards.length);
+  head.appendChild(count);
 
   el.draggable = true;
   el.addEventListener('dragstart', (e) => {
