@@ -19,11 +19,10 @@ export function initBoardSidePanel(): void {
   if (panel) return;
   panel = document.createElement('aside');
   panel.className = 'board-side-panel';
-  panel.style.display = 'none';
   document.body.appendChild(panel);
 
   document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape' && panel && panel.style.display !== 'none') {
+    if (e.key === 'Escape' && panel && panel.classList.contains('is-open')) {
       // Don't close if an open popover (status dropdown / add-prop picker) is on screen.
       if (document.querySelector('.board-status-dropdown, .board-add-field-picker')) return;
       closeBoardSidePanel();
@@ -31,19 +30,11 @@ export function initBoardSidePanel(): void {
   });
 
   document.addEventListener('mousedown', (e) => {
-    if (!panel || panel.style.display === 'none') return;
+    if (!panel || !panel.classList.contains('is-open')) return;
     if (panel.contains(e.target as Node)) return;
     const target = e.target as HTMLElement;
-    // Click on a card opens a new panel; don't auto-close in that case.
     if (target.closest('.board-card')) return;
-    // Click inside a popover spawned BY the panel; don't close.
-    if (target.closest('.board-status-dropdown, .board-add-field-picker')) return;
-    // If focus is inside the panel (e.g. an inline-rename input or a
-    // contenteditable field), defer the close so the focused element's
-    // blur handler can commit its pending edit BEFORE we tear down the
-    // panel state. Without this, mousedown synchronously clears
-    // currentBoard/currentOnBoardChange and the blur-driven commit
-    // returns early as a no-op — losing the edit.
+    if (target.closest('.board-status-dropdown, .board-add-field-picker, .board-field-action-menu, .board-confirm-overlay')) return;
     const activeEl = document.activeElement as HTMLElement | null;
     if (activeEl && panel.contains(activeEl)) {
       setTimeout(() => closeBoardSidePanel(), 0);
@@ -61,24 +52,51 @@ export function openBoardSidePanel(
   onBoardChange?: (next: Board) => void,
 ): void {
   initBoardSidePanel();
+  const wasOpen = panel!.classList.contains('is-open');
   currentBoard = board;
   currentCard = card;
   currentOnChange = onChange;
   currentOnBoardChange = onBoardChange ?? null;
   currentReadOnly = readOnly;
   renderPanel();
-  panel!.style.display = 'block';
+  if (wasOpen) {
+    // Already on screen (user clicked another card) — no slide-in needed.
+    return;
+  }
+  // Trigger the slide-in. Two RAFs so the browser commits the closed-state
+  // styles before applying .is-open, otherwise the transition is skipped.
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => {
+      panel?.classList.add('is-open');
+    });
+  });
 }
 
 export function closeBoardSidePanel(): void {
   if (!panel) return;
-  panel.style.display = 'none';
-  currentBoard = null;
-  currentCard = null;
-  currentOnChange = null;
-  currentOnBoardChange = null;
-  currentReadOnly = false;
-  renamingFieldName = null;
+  // Remove the .is-open class so the CSS transition slides the panel out.
+  // Keep state intact during the animation; clear it once the transition
+  // completes (or after a safety timeout in case transitionend doesn't
+  // fire — e.g., when reduced-motion is on).
+  panel.classList.remove('is-open');
+  const finish = () => {
+    currentBoard = null;
+    currentCard = null;
+    currentOnChange = null;
+    currentOnBoardChange = null;
+    currentReadOnly = false;
+    renamingFieldName = null;
+  };
+  let done = false;
+  const onEnd = (e: TransitionEvent) => {
+    if (e.target !== panel || done) return;
+    done = true;
+    panel?.removeEventListener('transitionend', onEnd);
+    finish();
+  };
+  panel.addEventListener('transitionend', onEnd);
+  // Safety net (reduced-motion / transition skipped): still reset state.
+  setTimeout(() => { if (!done) { done = true; panel?.removeEventListener('transitionend', onEnd); finish(); } }, 280);
 }
 
 // === Commit helpers. Crucially, they update the module-level currentCard /

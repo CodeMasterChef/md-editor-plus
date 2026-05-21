@@ -552,6 +552,23 @@
   color: var(--board-text);
   display: flex;
   flex-direction: column;
+  /* Closed-state: slid off to the right, transparent, non-interactive. The
+     panel always sits in the DOM and is toggled via the .is-open class so
+     transform/opacity transitions can run. */
+  transform: translateX(calc(100% + 24px));
+  opacity: 0;
+  pointer-events: none;
+  transition: transform 220ms cubic-bezier(0.22, 1, 0.36, 1),
+              opacity   180ms ease-out;
+  will-change: transform, opacity;
+}
+.board-side-panel.is-open {
+  transform: translateX(0);
+  opacity: 1;
+  pointer-events: auto;
+}
+@media (prefers-reduced-motion: reduce) {
+  .board-side-panel { transition: none; }
 }
 
 /* Toolbar at the very top — just close. */
