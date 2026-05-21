@@ -19,6 +19,8 @@
 import CodeBlock from './codeBlock';
 import { renderMermaid, detectDiagramKind } from '../mermaidRenderer';
 import { openMermaidFullscreen } from '../mermaidFullscreen';
+import { canEdit } from '../mermaidVisualEdit';
+import { createVisualEditor, VisualEditorHandle } from '../mermaidVisualEditDom';
 
 // SVGs — kept inline so the bundle has no extra asset deps.
 const ICON_EXPAND = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 3h6v6"/><path d="M9 21H3v-6"/><path d="M21 3l-7 7"/><path d="M3 21l7-7"/></svg>`;
@@ -48,7 +50,15 @@ export default MermaidBlock;
 // ── Mermaid NodeView ────────────────────────────────────────────────────────
 
 function buildMermaidView(props: unknown) {
-  const { node } = props as { node: { attrs: { language?: string }; type: { name: string } } };
+  const { node, editor, getPos } = props as {
+    node:   { attrs: { language?: string }; type: { name: string } };
+    editor: {
+      state:  { doc: { nodeAt: (p: number) => { type: { create: (attrs: unknown, content?: unknown) => unknown }; attrs: unknown; nodeSize: number } | null }; tr: { replaceWith: (a: number, b: number, n: unknown) => unknown } };
+      view:   { dispatch: (tr: unknown) => void };
+      schema: { text: (s: string) => unknown };
+    };
+    getPos: unknown;
+  };
 
   const dom = document.createElement('div');
   dom.className = 'mb';
@@ -75,9 +85,15 @@ function buildMermaidView(props: unknown) {
   header.append(langEl, actions);
 
   // ── Preview pane ───────────────────────────────────────────────────────
+  // preview = outer pane (also hosts visual-edit overlays as siblings)
+  // svgHost = inner div whose innerHTML we replace with each render
   const preview = document.createElement('div');
   preview.className = 'mb-preview';
   preview.contentEditable = 'false';
+
+  const svgHost = document.createElement('div');
+  svgHost.className = 'mb-svg-host';
+  preview.appendChild(svgHost);
 
   // ── Source pane (holds the actual ProseMirror contentDOM) ──────────────
   const source = document.createElement('div');
@@ -99,6 +115,7 @@ function buildMermaidView(props: unknown) {
 
   // ── State ──────────────────────────────────────────────────────────────
   let editing = false;
+  let visualHandle: VisualEditorHandle | null = null;
   let lastSvg: string | null = null;
   let snackbarTimer: ReturnType<typeof setTimeout> | null = null;
   let renderToken = 0;
@@ -114,6 +131,9 @@ function buildMermaidView(props: unknown) {
 
   function setEditing(on: boolean): void {
     if (editing === on) return;
+    // Source mode and visual mode are mutually exclusive — entering source
+    // tears down visual.
+    if (on && visualHandle) setVisualEditing(false);
     editing = on;
     dom.classList.toggle('mb-editing', on);
     toggle.setOn(on);
@@ -143,33 +163,83 @@ function buildMermaidView(props: unknown) {
     return code.textContent ?? '';
   }
 
+  // Replace the codeBlock node's text content with a new mermaid source.
+  // Mirrors the moveLine() pattern in codeBlock.ts — replaceWith forces lowlight
+  // (irrelevant here) to re-decorate and ProseMirror to fire update() on us.
+  function writeSourceBack(newSource: string): void {
+    if (typeof getPos !== 'function') return;
+    const pos = (getPos as () => number)();
+    if (typeof pos !== 'number') return;
+    const cbNode = editor.state.doc.nodeAt(pos);
+    if (!cbNode) return;
+    const newContent = newSource.length > 0 ? editor.schema.text(newSource) : undefined;
+    const newNode = cbNode.type.create(cbNode.attrs, newContent);
+    editor.view.dispatch(editor.state.tr.replaceWith(pos, pos + cbNode.nodeSize, newNode));
+  }
+
+  function setVisualEditing(on: boolean): void {
+    if (on === !!visualHandle) return;
+    if (on) {
+      // Don't enter visual when source mode is active — there's nothing to
+      // overlay on (preview pane is hidden).
+      if (editing) return;
+      // Refuse to activate if the parser can't make sense of the source.
+      if (!canEdit(currentSource())) {
+        // Fall back to source mode so the user can still edit.
+        setEditing(true);
+        return;
+      }
+      visualHandle = createVisualEditor({
+        block:       dom,
+        previewPane: preview,
+        getSource:   currentSource,
+        onSourceChange: (newSource) => {
+          writeSourceBack(newSource);
+        },
+        onExit: () => setVisualEditing(false),
+      });
+      dom.classList.add('mb-visual');
+    } else {
+      visualHandle?.destroy();
+      visualHandle = null;
+      dom.classList.remove('mb-visual');
+    }
+  }
+
   async function renderPreview(): Promise<void> {
     const myToken = ++renderToken;
     const src = currentSource();
     if (!src.trim()) {
-      preview.innerHTML = emptyHtml();
+      svgHost.innerHTML = emptyHtml();
       lastSvg = null;
       expandBtn.classList.add('mb-disabled');
       return;
     }
-    preview.innerHTML = spinnerHtml();
+    svgHost.innerHTML = spinnerHtml();
     const result = await renderMermaid(src);
     // If the user edited again while we were rendering, drop the stale result.
     if (myToken !== renderToken) return;
     if (result.ok) {
-      preview.innerHTML = result.svg;
+      svgHost.innerHTML = result.svg;
       lastSvg = result.svg;
       expandBtn.classList.remove('mb-disabled');
+      // Let the visual editor re-bind its overlays to the freshly painted SVG.
+      // Defer one frame so the new <g.node> elements are laid out before we
+      // measure their bounding rects.
+      if (visualHandle) requestAnimationFrame(() => visualHandle?.onMermaidRerender());
     } else {
-      preview.innerHTML = errorHtml(result.message, result.line);
+      svgHost.innerHTML = errorHtml(result.message, result.line);
       lastSvg = null;
       expandBtn.classList.add('mb-disabled');
       wireFixButton();
+      // A broken parse while in visual mode → bail back to preview/source.
+      // The user can keep editing source until syntax is valid again.
+      if (visualHandle) setVisualEditing(false);
     }
   }
 
   function wireFixButton(): void {
-    const btn = preview.querySelector<HTMLButtonElement>('.mb-err-fix');
+    const btn = svgHost.querySelector<HTMLButtonElement>('.mb-err-fix');
     if (!btn) return;
     btn.addEventListener('click', (e) => {
       e.preventDefault();
@@ -215,11 +285,18 @@ function buildMermaidView(props: unknown) {
   });
 
   // ── Wire double-click on preview ───────────────────────────────────────
+  // Double-click prefers visual edit; only flowchart/graph blocks qualify.
+  // For diagrams we can't visually edit (sequence, state, gantt, exotic
+  // syntax), double-click falls through to source mode.
   preview.addEventListener('dblclick', (e) => {
     if ((e.target as HTMLElement).closest('.mb-err-fix')) return; // button handled separately
     e.preventDefault();
     e.stopPropagation();
-    setEditing(true);
+    if (canEdit(currentSource())) {
+      setVisualEditing(true);
+    } else {
+      setEditing(true);
+    }
   });
 
   // ── Wire expand button ─────────────────────────────────────────────────
@@ -303,6 +380,8 @@ function buildMermaidView(props: unknown) {
       document.removeEventListener('mousedown', onOutsideClick, true);
       document.removeEventListener('mermaid-theme-changed', onThemeChange);
       if (snackbarTimer) clearTimeout(snackbarTimer);
+      visualHandle?.destroy();
+      visualHandle = null;
     },
   };
 }

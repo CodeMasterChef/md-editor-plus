@@ -1,0 +1,396 @@
+// Lossy-but-safe mermaid AST + serializer for Phase 1 visual editing.
+//
+// Scope: flowchart / graph blocks with simple node declarations and pair-style
+// edges. Anything unfamiliar (subgraph, classDef, style, chained edges, ::: class
+// modifiers, &-fanout, click handlers, comments, etc.) passes through verbatim
+// at its original line index.
+//
+// Round-trip contract: parsing then immediately serializing an AST returns the
+// source unchanged for the supported subset, and preserves passthrough lines in
+// their original positions.
+
+export type NodeShape =
+  | 'rect'        // A[Label]
+  | 'pill'        // A([Label])     stadium
+  | 'circle'      // A((Label))
+  | 'diamond'     // A{Label}
+  | 'round'       // A(Label)
+  | 'subroutine'  // A[[Label]]
+  | 'cylinder'    // A[(Label)]
+  | 'hexagon'     // A{{Label}}
+  | 'text'        // bare — emitted as A["Label"]
+  ;
+
+// `raw` holds the original source text of the parsed line, indent stripped.
+// If `raw` is present, the serializer emits it verbatim (preserving the
+// user's quoting / whitespace choices). Mutations (rename, shape change)
+// clear `raw` so the serializer falls back to canonical emit.
+
+export interface NodeDecl {
+  id:    string;
+  label: string;
+  shape: NodeShape;
+  raw?:  string;
+}
+
+export interface EdgeDecl {
+  from:   string;
+  to:     string;
+  label?: string;
+  arrow:  'open' | 'arrow' | 'dotted' | 'thick' | 'cross' | 'circle';
+  raw?:   string;
+}
+
+export interface PassthroughLine {
+  raw: string;
+}
+
+type AnyLine =
+  | { kind: 'node';   node: NodeDecl }
+  | { kind: 'edge';   edge: EdgeDecl }
+  | { kind: 'header'; raw:  string; direction: string }
+  | { kind: 'pass';   raw:  string };
+
+export interface Ast {
+  // Lines in original order. Operations append new node/edge lines and remove
+  // existing ones; passthrough lines stay anchored.
+  lines: AnyLine[];
+}
+
+// ── Public surface ─────────────────────────────────────────────────────────
+
+export function canEdit(source: string): boolean {
+  // Visual edit only activates for flowchart / graph blocks. The parser is
+  // forgiving — any unrecognized line becomes a passthrough — but we want a
+  // belt-and-braces "is this even a flowchart" check before we touch the source.
+  const firstReal = source.split('\n').map(s => s.trim()).find(s => s.length > 0 && !s.startsWith('%%') && !s.startsWith('---'));
+  if (!firstReal) return false;
+  return /^(flowchart|graph)\b/.test(firstReal);
+}
+
+export function parseMermaid(source: string): Ast {
+  const rawLines = source.split('\n');
+  const lines: AnyLine[] = [];
+  let headerSeen = false;
+
+  for (const raw of rawLines) {
+    const trimmed = raw.trim();
+
+    if (!headerSeen) {
+      const hm = trimmed.match(/^(flowchart|graph)\s+([A-Z]{1,2})\b/);
+      if (hm) {
+        headerSeen = true;
+        lines.push({ kind: 'header', raw, direction: hm[2] });
+        continue;
+      }
+      // Lines before the header (e.g., `---` frontmatter) are passthrough.
+      lines.push({ kind: 'pass', raw });
+      continue;
+    }
+
+    if (trimmed.length === 0) {
+      lines.push({ kind: 'pass', raw });
+      continue;
+    }
+
+    const edge = tryParseEdge(trimmed);
+    if (edge) {
+      lines.push({ kind: 'edge', edge });
+      continue;
+    }
+
+    const node = tryParseStandaloneNode(trimmed);
+    if (node) {
+      lines.push({ kind: 'node', node });
+      continue;
+    }
+
+    lines.push({ kind: 'pass', raw });
+  }
+
+  if (!headerSeen) {
+    // No header → not a flowchart we can edit. Stash everything as passthrough.
+    return { lines: rawLines.map(raw => ({ kind: 'pass', raw })) };
+  }
+
+  return { lines };
+}
+
+export function serializeMermaid(ast: Ast): string {
+  return ast.lines.map(l => emitLine(l)).join('\n');
+}
+
+// Builds a quick lookup of every node referenced in the AST — by explicit
+// declaration AND by appearing as either side of an edge with inline shape.
+export function collectNodes(ast: Ast): Map<string, NodeDecl> {
+  const m = new Map<string, NodeDecl>();
+  for (const line of ast.lines) {
+    if (line.kind === 'node') m.set(line.node.id, line.node);
+    if (line.kind === 'edge') {
+      if (!m.has(line.edge.from)) m.set(line.edge.from, defaultNode(line.edge.from));
+      if (!m.has(line.edge.to))   m.set(line.edge.to,   defaultNode(line.edge.to));
+    }
+  }
+  return m;
+}
+
+export function collectEdges(ast: Ast): EdgeDecl[] {
+  const out: EdgeDecl[] = [];
+  for (const line of ast.lines) {
+    if (line.kind === 'edge') out.push(line.edge);
+  }
+  return out;
+}
+
+// ── Mutations ───────────────────────────────────────────────────────────────
+
+export function addNode(ast: Ast, shape: NodeShape, label?: string): NodeDecl {
+  const id = nextId(ast);
+  const node: NodeDecl = {
+    id,
+    label: label ?? 'Untitled',
+    shape,
+  };
+  // Insert after the last node line (or after the header if no nodes exist).
+  const insertAt = lastIndexOfKind(ast, 'node') + 1 || lastIndexOfKind(ast, 'header') + 1 || ast.lines.length;
+  ast.lines.splice(insertAt, 0, { kind: 'node', node });
+  return node;
+}
+
+export function renameNode(ast: Ast, id: string, newLabel: string): boolean {
+  let renamed = false;
+  for (const line of ast.lines) {
+    if (line.kind === 'node' && line.node.id === id) {
+      line.node.label = newLabel;
+      line.node.raw = undefined;
+      renamed = true;
+    }
+  }
+  // If the node was implicit (only referenced in edges), promote it to a real
+  // node line so the label sticks.
+  if (!renamed) {
+    const refByEdge = ast.lines.some(l => l.kind === 'edge' && (l.edge.from === id || l.edge.to === id));
+    if (refByEdge) {
+      const insertAt = lastIndexOfKind(ast, 'node') + 1 || lastIndexOfKind(ast, 'header') + 1 || ast.lines.length;
+      ast.lines.splice(insertAt, 0, { kind: 'node', node: { id, label: newLabel, shape: 'rect' } });
+      renamed = true;
+    }
+  }
+  return renamed;
+}
+
+export function changeNodeShape(ast: Ast, id: string, shape: NodeShape): boolean {
+  for (const line of ast.lines) {
+    if (line.kind === 'node' && line.node.id === id) {
+      line.node.shape = shape;
+      line.node.raw = undefined;
+      return true;
+    }
+  }
+  // Implicit nodes — promote with the requested shape.
+  const refByEdge = ast.lines.some(l => l.kind === 'edge' && (l.edge.from === id || l.edge.to === id));
+  if (refByEdge) {
+    const insertAt = lastIndexOfKind(ast, 'node') + 1 || lastIndexOfKind(ast, 'header') + 1 || ast.lines.length;
+    ast.lines.splice(insertAt, 0, { kind: 'node', node: { id, label: id, shape } });
+    return true;
+  }
+  return false;
+}
+
+export function deleteNode(ast: Ast, id: string): void {
+  ast.lines = ast.lines.filter(l => {
+    if (l.kind === 'node' && l.node.id === id) return false;
+    if (l.kind === 'edge' && (l.edge.from === id || l.edge.to === id)) return false;
+    return true;
+  });
+}
+
+export function addEdge(ast: Ast, from: string, to: string): EdgeDecl {
+  const edge: EdgeDecl = { from, to, arrow: 'arrow' };
+  ast.lines.push({ kind: 'edge', edge });
+  return edge;
+}
+
+export function deleteEdge(ast: Ast, from: string, to: string): void {
+  let removed = false;
+  ast.lines = ast.lines.filter(l => {
+    if (removed) return true;
+    if (l.kind === 'edge' && l.edge.from === from && l.edge.to === to) {
+      removed = true;
+      return false;
+    }
+    return true;
+  });
+}
+
+// Snapshot helpers for the undo stack — cheap deep clone via JSON since the AST
+// is plain data.
+export function cloneAst(ast: Ast): Ast {
+  return JSON.parse(JSON.stringify(ast)) as Ast;
+}
+
+// ── Parsers (internal) ──────────────────────────────────────────────────────
+
+// Order matters — more specific (longer) bracket pairs must come first so a
+// "subroutine" line doesn't get caught by the "rect" regex.
+const NODE_SHAPES: Array<[NodeShape, RegExp]> = [
+  ['subroutine', /^([A-Za-z][\w-]*)\[\[\s*"?([^\]"]*?)"?\s*\]\]$/], // A[[Label]]
+  ['cylinder',   /^([A-Za-z][\w-]*)\[\(\s*"?([^)"]*?)"?\s*\)\]$/],  // A[(Label)]
+  ['pill',       /^([A-Za-z][\w-]*)\(\[\s*"?([^\]"]*?)"?\s*\]\)$/], // A([Label])
+  ['circle',     /^([A-Za-z][\w-]*)\(\(\s*"?([^)"]*?)"?\s*\)\)$/],  // A((Label))
+  ['hexagon',    /^([A-Za-z][\w-]*)\{\{\s*"?([^}"]*?)"?\s*\}\}$/],  // A{{Label}}
+  ['rect',       /^([A-Za-z][\w-]*)\[\s*"?([^\]"]*?)"?\s*\]$/],     // A[Label]
+  ['round',      /^([A-Za-z][\w-]*)\(\s*"?([^)"]*?)"?\s*\)$/],      // A(Label)
+  ['diamond',    /^([A-Za-z][\w-]*)\{\s*"?([^}"]*?)"?\s*\}$/],      // A{Label}
+];
+
+function tryParseStandaloneNode(trimmed: string): NodeDecl | null {
+  for (const [shape, re] of NODE_SHAPES) {
+    const m = trimmed.match(re);
+    if (m) return { id: m[1], label: m[2], shape, raw: trimmed };
+  }
+  // A bare id on its own line we treat as a node reference, but we won't
+  // bother promoting it unless we have to. So treat as passthrough.
+  return null;
+}
+
+// Edge pattern matchers — try in order, most specific first. Returns parsed
+// from / to plus the arrow style. Only handles the canonical pair form
+//   "X --[label?]--> Y"
+// Chained edges (A --> B --> C) and fanouts (A --> B & C) are NOT recognized —
+// they fall through to passthrough.
+function tryParseEdge(trimmed: string): EdgeDecl | null {
+  // Strip any trailing semicolon (mermaid tolerates it as separator).
+  const line = trimmed.replace(/;\s*$/, '');
+
+  // Inline node decls in edges (A[Label] --> B(Label)) — peel them off and
+  // capture the implicit shape. We'll allow this and emit node + edge.
+  const splitMatch = line.match(/^(.+?)\s*(==>|---|-\.->|-\.-|-->|--x|--o|--)\s*(?:\|"?([^"|]*)"?\|\s*)?(.+)$/);
+  if (!splitMatch) {
+    // Also try the form "A -- text --> B".
+    const longArrow = line.match(/^(.+?)\s*--\s*"?([^-]+?)"?\s*-->\s*(.+)$/);
+    if (longArrow) {
+      const fromId = peelInlineId(longArrow[1].trim());
+      const toId   = peelInlineId(longArrow[3].trim());
+      if (!fromId || !toId) return null;
+      return { from: fromId, to: toId, label: longArrow[2].trim(), arrow: 'arrow', raw: trimmed };
+    }
+    return null;
+  }
+
+  const [, lhs, op, label, rhs] = splitMatch;
+  const fromId = peelInlineId(lhs.trim());
+  const toId   = peelInlineId(rhs.trim());
+  if (!fromId || !toId) return null;
+
+  const arrow: EdgeDecl['arrow'] =
+      op === '==>'  ? 'thick'
+    : op === '-.->' ? 'dotted'
+    : op === '-.-'  ? 'dotted'
+    : op === '--x'  ? 'cross'
+    : op === '--o'  ? 'circle'
+    : op === '---'  ? 'open'
+    : op === '--'   ? 'open'
+    :                  'arrow';
+
+  return { from: fromId, to: toId, label: label?.trim() || undefined, arrow, raw: trimmed };
+}
+
+// Extract a bare id from an "A" or "A[Label]" / "A(Label)" / etc. fragment.
+// If the fragment carries inline node syntax, we accept it but only return the
+// id — the inline declaration is preserved when the AST is serialized via the
+// passthrough mechanism (this is a known mild lossiness for v1).
+function peelInlineId(fragment: string): string | null {
+  const bareMatch = fragment.match(/^([A-Za-z][\w-]*)$/);
+  if (bareMatch) return bareMatch[1];
+  const shapedMatch = fragment.match(/^([A-Za-z][\w-]*)[\[\(\{]/);
+  if (shapedMatch) return shapedMatch[1];
+  return null;
+}
+
+// ── Serializers (internal) ──────────────────────────────────────────────────
+
+function emitLine(line: AnyLine): string {
+  if (line.kind === 'header') return line.raw;
+  if (line.kind === 'pass')   return line.raw;
+  // For node/edge lines: if the parsed `raw` is still attached, emit it
+  // verbatim (preserves the user's quoting and inline shape syntax).
+  // Mutations clear `raw` to force a canonical re-emit.
+  if (line.kind === 'node') {
+    return '    ' + (line.node.raw ?? emitNode(line.node));
+  }
+  if (line.kind === 'edge') {
+    return '    ' + (line.edge.raw ?? emitEdge(line.edge));
+  }
+  return '';
+}
+
+function emitNode(n: NodeDecl): string {
+  // Always quote the label when emitting fresh — round-trip stability beats
+  // a slightly noisier source. (Users editing the source directly can
+  // restore unquoted forms; visual edits never strip quotes.)
+  const label = `"${n.label.replace(/"/g, '\\"')}"`;
+  switch (n.shape) {
+    case 'rect':       return `${n.id}[${label}]`;
+    case 'pill':       return `${n.id}([${label}])`;
+    case 'circle':     return `${n.id}((${label}))`;
+    case 'diamond':    return `${n.id}{${label}}`;
+    case 'round':      return `${n.id}(${label})`;
+    case 'subroutine': return `${n.id}[[${label}]]`;
+    case 'cylinder':   return `${n.id}[(${label})]`;
+    case 'hexagon':    return `${n.id}{{${label}}}`;
+    case 'text':       return `${n.id}[${label}]`;
+  }
+}
+
+function emitEdge(e: EdgeDecl): string {
+  // No-label edges always use the canonical arrow operator.
+  if (!e.label) {
+    const op =
+        e.arrow === 'thick'  ? '==>'
+      : e.arrow === 'dotted' ? '-.->'
+      : e.arrow === 'cross'  ? '--x'
+      : e.arrow === 'circle' ? '--o'
+      : e.arrow === 'open'   ? '---'
+      :                        '-->';
+    return `${e.from} ${op} ${e.to}`;
+  }
+  // Labelled edges: use mermaid's pipe-style label syntax for the arrow types
+  // that support it (`-->`, `==>`). For dotted use the `-. text .->` form. For
+  // open / cross / circle use the `-- text --x` long form (label sits between
+  // the dashes and the cap).
+  switch (e.arrow) {
+    case 'arrow':  return `${e.from} -->|${e.label}| ${e.to}`;
+    case 'thick':  return `${e.from} ==>|${e.label}| ${e.to}`;
+    case 'dotted': return `${e.from} -. ${e.label} .-> ${e.to}`;
+    case 'cross':  return `${e.from} -- ${e.label} --x ${e.to}`;
+    case 'circle': return `${e.from} -- ${e.label} --o ${e.to}`;
+    case 'open':   return `${e.from} -- ${e.label} --- ${e.to}`;
+  }
+}
+
+// ── Helpers ─────────────────────────────────────────────────────────────────
+
+function defaultNode(id: string): NodeDecl {
+  return { id, label: id, shape: 'rect' };
+}
+
+function lastIndexOfKind(ast: Ast, kind: AnyLine['kind']): number {
+  for (let i = ast.lines.length - 1; i >= 0; i--) {
+    if (ast.lines[i].kind === kind) return i;
+  }
+  return -1;
+}
+
+function nextId(ast: Ast): string {
+  const used = new Set<string>();
+  for (const line of ast.lines) {
+    if (line.kind === 'node') used.add(line.node.id);
+    if (line.kind === 'edge') { used.add(line.edge.from); used.add(line.edge.to); }
+  }
+  for (let i = 1; i < 10000; i++) {
+    const candidate = `n${i}`;
+    if (!used.has(candidate)) return candidate;
+  }
+  return `n${Date.now()}`;
+}

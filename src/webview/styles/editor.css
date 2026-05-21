@@ -3019,3 +3019,177 @@ html.theme-dark .ProseMirror .mb-source-pre { background: var(--code-bg); }
 
 /* RTL: mermaid blocks always stay LTR. */
 .ProseMirror .mb, .ProseMirror .mb * { direction: ltr; }
+
+/* ===========================================================================
+   Visual edit (Phase 1) — toolbar, selection, context tip, rename overlay.
+   These overlays are siblings of .mb-svg-host inside .mb-preview, so they
+   survive svgHost.innerHTML rewrites on every mermaid render.
+   =========================================================================== */
+
+/* SVG host — child of .mb-preview that gets innerHTML replaced on each render. */
+.ProseMirror .mb-svg-host {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  width: 100%;
+  position: relative;
+  z-index: 1;
+}
+.ProseMirror .mb-svg-host > svg { max-width: 100%; height: auto; }
+
+/* When visual edit is active, the preview must be position:relative so
+   absolute overlays anchor to it, and we give the block a soft accent ring. */
+.ProseMirror .mb-preview { position: relative; }
+.ProseMirror .mb.mb-visual { outline: 2px solid var(--link); outline-offset: -2px; }
+
+/* Hide helper, reused across overlays. */
+.ProseMirror .mb-hidden { display: none !important; }
+
+/* ── Floating shape toolbar ─────────────────────────────────────────────── */
+.ProseMirror .mb-vTb {
+  position: absolute;
+  top: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 2px;
+  padding: 4px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.10);
+  z-index: 30;
+}
+.ProseMirror .mb-vTb-btn {
+  width: 28px;
+  height: 28px;
+  border: none;
+  background: transparent;
+  border-radius: 5px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-secondary);
+  padding: 0;
+  transition: background 0.1s, color 0.1s;
+}
+.ProseMirror .mb-vTb-btn svg { width: 14px; height: 14px; }
+.ProseMirror .mb-vTb-btn:hover { background: var(--block-hover); color: var(--text-primary); }
+.ProseMirror .mb-vTb-btn.mb-vTb-active {
+  background: var(--callout-note-bg);
+  color: var(--callout-note-accent);
+}
+.ProseMirror .mb-vTb-sep {
+  width: 1px;
+  height: 18px;
+  background: var(--border);
+  align-self: center;
+  margin: 0 3px;
+}
+
+/* ── Selection ring ─────────────────────────────────────────────────────── */
+.ProseMirror .mb-vSel {
+  position: absolute;
+  border: 1.5px dashed var(--link);
+  border-radius: 4px;
+  pointer-events: none;
+  z-index: 20;
+  box-sizing: border-box;
+}
+
+/* ── Context tip ────────────────────────────────────────────────────────── */
+.ProseMirror .mb-vCtx {
+  position: absolute;
+  transform: translateX(-50%);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 5px;
+  background: #1f1f23;
+  color: #fff;
+  border-radius: 6px;
+  font: 500 11px var(--font-body);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.18);
+  z-index: 25;
+}
+.ProseMirror .mb-vCtx-btn {
+  background: transparent;
+  border: none;
+  color: #fff;
+  font: inherit;
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+.ProseMirror .mb-vCtx-btn:hover { background: rgba(255, 255, 255, 0.12); }
+.ProseMirror .mb-vCtx-danger { color: #fda4af; font-size: 14px; line-height: 1; padding: 0 6px; }
+.ProseMirror .mb-vCtx-danger:hover { background: rgba(244, 63, 94, 0.18); color: #fff; }
+.ProseMirror .mb-vCtx-sep {
+  width: 1px;
+  height: 12px;
+  background: rgba(255, 255, 255, 0.2);
+  margin: 0 2px;
+}
+.ProseMirror .mb-vCtx-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  display: flex;
+  flex-direction: column;
+  background: #1f1f23;
+  border-radius: 6px;
+  padding: 4px;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.20);
+  min-width: 110px;
+  z-index: 26;
+}
+.ProseMirror .mb-vCtx-menu-item {
+  background: transparent;
+  border: none;
+  color: #fff;
+  text-align: left;
+  padding: 5px 9px;
+  border-radius: 4px;
+  font: 500 11px var(--font-body);
+  cursor: pointer;
+}
+.ProseMirror .mb-vCtx-menu-item:hover { background: rgba(255, 255, 255, 0.12); }
+
+/* ── Rename overlay (inline contenteditable input over the node label) ─── */
+.ProseMirror .mb-vRename {
+  position: absolute;
+  border: 1.5px solid var(--link);
+  background: var(--bg);
+  color: var(--text-primary);
+  border-radius: 5px;
+  padding: 4px 8px;
+  font: 500 13px var(--font-body);
+  box-shadow: 0 4px 14px rgba(99, 102, 241, 0.20);
+  outline: none;
+  z-index: 28;
+  box-sizing: border-box;
+}
+
+/* ── "Click another node to connect" pin (Arrow tool) ───────────────────── */
+.ProseMirror .mb-vPin {
+  position: absolute;
+  bottom: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--callout-note-bg);
+  color: var(--callout-note-accent);
+  border: 1px solid var(--callout-note-border);
+  border-radius: 999px;
+  padding: 4px 11px;
+  font: 500 11.5px var(--font-body);
+  z-index: 22;
+}
+
+/* Dark theme tweaks for the toolbar — the active button reads better against
+   a slightly higher contrast surface when the whole editor is dark. */
+html.theme-dark .ProseMirror .mb-vTb { background: var(--bg-secondary); }
+html.theme-dark .ProseMirror .mb-vTb-btn.mb-vTb-active {
+  background: rgba(99, 102, 241, 0.18);
+  color: #c7d2fe;
+}
