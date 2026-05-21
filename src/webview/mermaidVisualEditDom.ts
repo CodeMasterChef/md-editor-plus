@@ -17,7 +17,7 @@ import {
   getStyles, getNodeStyle, setNodeStyle, NodeStyle, StyleMap,
 } from './mermaidVisualEdit';
 
-export type Tool = 'select' | 'rect' | 'pill' | 'circle' | 'diamond' | 'arrow' | 'text';
+export type Tool = 'select' | 'rect' | 'pill' | 'circle' | 'diamond' | 'arrow' | 'text' | 'sticky';
 
 export interface VisualEditorOptions {
   /** The block's outer DOM element (we own absolute overlays inside it). */
@@ -39,7 +39,7 @@ export interface VisualEditorHandle {
   destroy: () => void;
 }
 
-const SHAPE_FOR_TOOL: Record<Exclude<Tool, 'select' | 'arrow'>, NodeShape> = {
+const SHAPE_FOR_TOOL: Record<Exclude<Tool, 'select' | 'arrow' | 'sticky'>, NodeShape> = {
   rect:    'rect',
   pill:    'pill',
   circle:  'circle',
@@ -56,6 +56,7 @@ const ICONS: Record<string, string> = {
   diamond: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3l9 9-9 9-9-9 9-9z"/></svg>`,
   arrow:   `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14m-4-4l4 4-4 4"/></svg>`,
   text:    `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7h16M12 7v13"/></svg>`,
+  sticky:  `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/></svg>`,
   reset:   `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v6h6"/></svg>`,
   grid:    `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>`,
 };
@@ -68,6 +69,7 @@ const TOOL_HOTKEYS: Record<string, Tool> = {
   d: 'diamond',
   a: 'arrow',
   t: 'text',
+  n: 'sticky',
 };
 
 export function createVisualEditor(opts: VisualEditorOptions): VisualEditorHandle {
@@ -271,10 +273,15 @@ export function createVisualEditor(opts: VisualEditorOptions): VisualEditorHandl
     // block wasn't pinned yet, snapshot every existing node's auto-layout
     // position first so edges stay coherent once we promote the block to
     // pinned mode (same trick as the first-drag commit).
-    const shapeKey = activeTool as keyof typeof SHAPE_FOR_TOOL;
+    const isSticky = activeTool === 'sticky';
+    const shapeKey: keyof typeof SHAPE_FOR_TOOL = isSticky ? 'rect' : (activeTool as keyof typeof SHAPE_FOR_TOOL);
     const dropPos = clientToSvgPoint(e.clientX, e.clientY, opts.previewPane);
     mutate((ast) => {
-      const added = addNode(ast, SHAPE_FOR_TOOL[shapeKey]);
+      const added = addNode(ast, SHAPE_FOR_TOOL[shapeKey], isSticky ? 'Note' : undefined);
+      // Sticky note styling — yellow fill, dark text, bold.
+      if (isSticky) {
+        setNodeStyle(ast, added.id, { fill: '#fef6a9', border: '#f0e07a', text: '#1f1f23', bold: true });
+      }
       if (dropPos) {
         if (!getPositions(ast)) {
           const snapshot: PositionMap = {};
@@ -956,7 +963,7 @@ function buildToolbar({ onPick, onReset, onToggleGrid }: ToolbarHandlers): Toolb
     { tools: ['select'] },
     { tools: ['rect', 'pill', 'circle', 'diamond'] },
     { tools: ['arrow'] },
-    { tools: ['text'] },
+    { tools: ['text', 'sticky'] },
   ];
 
   const tipMap: Record<Tool, string> = {
@@ -967,6 +974,7 @@ function buildToolbar({ onPick, onReset, onToggleGrid }: ToolbarHandlers): Toolb
     diamond: 'Diamond (D)',
     arrow:   'Arrow (A)',
     text:    'Text (T)',
+    sticky:  'Sticky note (N)',
   };
 
   const buttonsByTool = new Map<Tool, HTMLButtonElement>();

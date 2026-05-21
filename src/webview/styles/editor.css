@@ -3045,19 +3045,19 @@ html.theme-dark .ProseMirror .mb-source-pre { background: var(--code-bg); }
 /* Hide helper, reused across overlays. */
 .ProseMirror .mb-hidden { display: none !important; }
 
-/* ── Floating shape toolbar ─────────────────────────────────────────────── */
+/* ── Floating shape toolbar (Phase 6: bottom-center) ──────────────────── */
 .ProseMirror .mb-vTb {
   position: absolute;
-  top: 10px;
+  bottom: 14px;
   left: 50%;
   transform: translateX(-50%);
   display: flex;
   gap: 2px;
-  padding: 4px;
+  padding: 5px 6px;
   background: var(--bg);
   border: 1px solid var(--border);
-  border-radius: 8px;
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.10);
+  border-radius: 999px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.12);
   z-index: 30;
 }
 .ProseMirror .mb-vTb-btn {
