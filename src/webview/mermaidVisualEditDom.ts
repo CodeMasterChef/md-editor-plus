@@ -198,31 +198,8 @@ export function createVisualEditor(opts: VisualEditorOptions): VisualEditorHandl
         for (const id of targetIds) setNodeStyle(ast, id, partial);
       });
     },
-    onDuplicate: () => {
-      const targetIds = Array.from(selectedIds);
-      if (targetIds.length === 0) return;
-      mutate((ast) => {
-        const positions = getPositions(ast);
-        const styles    = getStyles(ast) ?? {};
-        const newIds: string[] = [];
-        for (const id of targetIds) {
-          // Look up shape + label of original.
-          const orig = collectNodes(ast).get(id);
-          const shape: NodeShape = orig?.shape ?? 'rect';
-          const label = (orig?.label ?? id) + ' copy';
-          const added = addNode(ast, shape, label);
-          newIds.push(added.id);
-          // Copy style if present.
-          if (styles[id]) setNodeStyle(ast, added.id, styles[id]);
-          // Copy position with a small offset if positions are pinned.
-          if (positions && positions[id]) {
-            setPosition(ast, added.id, positions[id][0] + 30, positions[id][1] + 30);
-          }
-        }
-        // Defer selection update until after mermaid re-renders.
-        pendingDuplicateIds = newIds;
-      });
-    },
+    onDuplicate: () => { duplicateSelected(); },
+    onAlign:     (axis) => { alignSelected(axis); },
   });
   const renameOverlay = buildRenameOverlay({
     onCommit: (newLabel) => {
@@ -443,6 +420,25 @@ export function createVisualEditor(opts: VisualEditorOptions): VisualEditorHandl
       return;
     }
 
+    // Phase 8: Cmd+D duplicate selection.
+    if (meta && e.key.toLowerCase() === 'd' && selectedIds.size > 0) {
+      e.preventDefault();
+      duplicateSelected();
+      return;
+    }
+
+    // Phase 8: Cmd+C / Cmd+V cross-block clipboard.
+    if (meta && e.key.toLowerCase() === 'c' && selectedIds.size > 0) {
+      e.preventDefault();
+      copySelection().catch(() => undefined);
+      return;
+    }
+    if (meta && e.key.toLowerCase() === 'v') {
+      e.preventDefault();
+      pasteSelection().catch(() => undefined);
+      return;
+    }
+
     if (e.key === 'Enter' && selectedId) {
       e.preventDefault();
       const ast = parseMermaid(opts.getSource());
@@ -513,6 +509,143 @@ export function createVisualEditor(opts: VisualEditorOptions): VisualEditorHandl
     if (nudgeTimer) clearTimeout(nudgeTimer);
     nudgeTimer = setTimeout(commitNudge, 200);
   }
+  // Phase 8: Power-user actions.
+  function duplicateSelected(): void {
+    const targetIds = Array.from(selectedIds);
+    if (targetIds.length === 0) return;
+    mutate((ast) => {
+      const positions = getPositions(ast);
+      const styles    = getStyles(ast) ?? {};
+      const newIds: string[] = [];
+      for (const id of targetIds) {
+        const orig = collectNodes(ast).get(id);
+        const shape: NodeShape = orig?.shape ?? 'rect';
+        const label = (orig?.label ?? id) + ' copy';
+        const added = addNode(ast, shape, label);
+        newIds.push(added.id);
+        if (styles[id]) setNodeStyle(ast, added.id, styles[id]);
+        if (positions && positions[id]) {
+          setPosition(ast, added.id, positions[id][0] + 30, positions[id][1] + 30);
+        }
+      }
+      pendingDuplicateIds = newIds;
+    });
+  }
+
+  interface ClipboardNode {
+    shape:  NodeShape;
+    label:  string;
+    pos?:   [number, number];
+    style?: NodeStyle;
+  }
+
+  async function copySelection(): Promise<void> {
+    const ast = parseMermaid(opts.getSource());
+    const nodesMap = collectNodes(ast);
+    const positions = getPositions(ast);
+    const styles    = getStyles(ast) ?? {};
+    const out: ClipboardNode[] = [];
+    for (const id of selectedIds) {
+      const n = nodesMap.get(id);
+      if (!n) continue;
+      out.push({
+        shape: n.shape,
+        label: n.label,
+        pos:   positions?.[id],
+        style: styles[id],
+      });
+    }
+    if (out.length === 0) return;
+    const payload = `__mb_clipboard__:${JSON.stringify(out)}`;
+    try { await navigator.clipboard.writeText(payload); } catch { /* ignore */ }
+  }
+
+  async function pasteSelection(): Promise<void> {
+    let raw: string;
+    try { raw = await navigator.clipboard.readText(); } catch { return; }
+    if (!raw.startsWith('__mb_clipboard__:')) return;
+    let data: ClipboardNode[];
+    try { data = JSON.parse(raw.slice('__mb_clipboard__:'.length)); } catch { return; }
+    if (!Array.isArray(data) || data.length === 0) return;
+    mutate((ast) => {
+      const newIds: string[] = [];
+      for (const item of data) {
+        const added = addNode(ast, item.shape ?? 'rect', item.label ?? 'Untitled');
+        newIds.push(added.id);
+        if (item.style) setNodeStyle(ast, added.id, item.style);
+        if (item.pos) setPosition(ast, added.id, item.pos[0] + 30, item.pos[1] + 30);
+      }
+      pendingDuplicateIds = newIds;
+    });
+  }
+
+  type AlignAxis = 'left' | 'center-h' | 'right' | 'top' | 'middle-v' | 'bottom' | 'distribute-h' | 'distribute-v';
+  function alignSelected(axis: AlignAxis): void {
+    const ids = Array.from(selectedIds);
+    if (ids.length < 2) return;
+    mutate((ast) => {
+      // Need positions for alignment. Snapshot if missing.
+      if (!getPositions(ast)) {
+        const snapshot: PositionMap = {};
+        const allNodes = opts.previewPane.querySelectorAll<SVGGElement>('g.node');
+        for (const n of Array.from(allNodes)) {
+          const nid = extractMermaidId(n);
+          if (!nid) continue;
+          const t = readNodeTranslate(n);
+          if (t) snapshot[nid] = [t.x, t.y];
+        }
+        setAllPositions(ast, snapshot);
+      }
+      const positions = getPositions(ast)!;
+      const halves = new Map<string, { w: number; h: number }>();
+      for (const id of ids) {
+        const el = findNodeElementById(id, opts.previewPane) as SVGGElement | null;
+        halves.set(id, el ? nodeHalfExtent(el) : { w: 30, h: 20 });
+      }
+      const xs = ids.map(id => positions[id]?.[0] ?? 0);
+      const ys = ids.map(id => positions[id]?.[1] ?? 0);
+      const lefts   = ids.map(id => (positions[id]?.[0] ?? 0) - (halves.get(id)?.w ?? 30));
+      const rights  = ids.map(id => (positions[id]?.[0] ?? 0) + (halves.get(id)?.w ?? 30));
+      const tops    = ids.map(id => (positions[id]?.[1] ?? 0) - (halves.get(id)?.h ?? 20));
+      const bottoms = ids.map(id => (positions[id]?.[1] ?? 0) + (halves.get(id)?.h ?? 20));
+
+      if (axis === 'left') {
+        const target = Math.min(...lefts);
+        ids.forEach(id => setPosition(ast, id, target + (halves.get(id)?.w ?? 30), positions[id][1]));
+      } else if (axis === 'right') {
+        const target = Math.max(...rights);
+        ids.forEach(id => setPosition(ast, id, target - (halves.get(id)?.w ?? 30), positions[id][1]));
+      } else if (axis === 'center-h') {
+        const cx = (Math.min(...lefts) + Math.max(...rights)) / 2;
+        ids.forEach(id => setPosition(ast, id, cx, positions[id][1]));
+      } else if (axis === 'top') {
+        const target = Math.min(...tops);
+        ids.forEach(id => setPosition(ast, id, positions[id][0], target + (halves.get(id)?.h ?? 20)));
+      } else if (axis === 'bottom') {
+        const target = Math.max(...bottoms);
+        ids.forEach(id => setPosition(ast, id, positions[id][0], target - (halves.get(id)?.h ?? 20)));
+      } else if (axis === 'middle-v') {
+        const cy = (Math.min(...tops) + Math.max(...bottoms)) / 2;
+        ids.forEach(id => setPosition(ast, id, positions[id][0], cy));
+      } else if (axis === 'distribute-h') {
+        const sorted = [...ids].sort((a, b) => positions[a][0] - positions[b][0]);
+        if (sorted.length < 3) return;
+        const minX = positions[sorted[0]][0];
+        const maxX = positions[sorted[sorted.length - 1]][0];
+        const step = (maxX - minX) / (sorted.length - 1);
+        sorted.forEach((id, i) => setPosition(ast, id, minX + i * step, positions[id][1]));
+      } else if (axis === 'distribute-v') {
+        const sorted = [...ids].sort((a, b) => positions[a][1] - positions[b][1]);
+        if (sorted.length < 3) return;
+        const minY = positions[sorted[0]][1];
+        const maxY = positions[sorted[sorted.length - 1]][1];
+        const step = (maxY - minY) / (sorted.length - 1);
+        sorted.forEach((id, i) => setPosition(ast, id, positions[id][0], minY + i * step));
+      }
+      void xs; void ys; // satisfy lint
+    });
+  }
+
   function commitNudge(): void {
     if (!nudgeAcc) return;
     const { id, x, y } = nudgeAcc;
@@ -1226,6 +1359,7 @@ interface ContextTipHandlers {
   onToggleLock:() => void;
   onStyle:     (partial: NodeStyle) => void;
   onDuplicate: () => void;
+  onAlign:     (axis: 'left' | 'center-h' | 'right' | 'top' | 'middle-v' | 'bottom' | 'distribute-h' | 'distribute-v') => void;
 }
 
 function buildContextTip(handlers: ContextTipHandlers): ContextTipHandle {
@@ -1323,6 +1457,46 @@ function buildContextTip(handlers: ContextTipHandlers): ContextTipHandle {
   const styleSep = document.createElement('span');
   styleSep.className = 'mb-vCtx-sep';
 
+  // ── More menu (align / distribute) ─────────────────────────────────────
+  const moreWrap = document.createElement('div');
+  moreWrap.className = 'mb-vCtx-color'; // reuse positioning chrome
+  const moreBtn = document.createElement('button');
+  moreBtn.type = 'button';
+  moreBtn.className = 'mb-vCtx-btn mb-vCtx-more';
+  moreBtn.textContent = '⋯';
+  moreBtn.setAttribute('aria-label', 'More actions');
+  moreBtn.addEventListener('mousedown', (e) => { e.preventDefault(); e.stopPropagation(); });
+  const morePop = document.createElement('div');
+  morePop.className = 'mb-vCtx-morepop mb-hidden';
+  const moreItems: Array<[ContextTipHandlers['onAlign'] extends (a: infer A) => unknown ? A : never, string]> = [
+    ['left',         'Align left'],
+    ['center-h',     'Align center'],
+    ['right',        'Align right'],
+    ['top',          'Align top'],
+    ['middle-v',     'Align middle'],
+    ['bottom',       'Align bottom'],
+    ['distribute-h', 'Distribute horizontally'],
+    ['distribute-v', 'Distribute vertically'],
+  ];
+  for (const [axis, label] of moreItems) {
+    const it = document.createElement('button');
+    it.type = 'button';
+    it.className = 'mb-vCtx-menu-item';
+    it.textContent = label;
+    it.addEventListener('mousedown', (e) => { e.preventDefault(); e.stopPropagation(); });
+    it.addEventListener('click', (e) => {
+      e.preventDefault(); e.stopPropagation();
+      morePop.classList.add('mb-hidden');
+      handlers.onAlign(axis);
+    });
+    morePop.appendChild(it);
+  }
+  moreBtn.addEventListener('click', (e) => {
+    e.preventDefault(); e.stopPropagation();
+    morePop.classList.toggle('mb-hidden');
+  });
+  moreWrap.append(moreBtn, morePop);
+
   const lockBtn = document.createElement('button');
   lockBtn.type = 'button';
   lockBtn.className = 'mb-vCtx-btn mb-vCtx-lock';
@@ -1354,7 +1528,7 @@ function buildContextTip(handlers: ContextTipHandlers): ContextTipHandle {
     shapeBtn, shapeMenu, sep,
     fontInput, boldBtn,
     textColorBtn.el, borderBtn.el, fillBtn.el,
-    dupBtn, styleSep,
+    dupBtn, moreWrap, styleSep,
     lockBtn, sep2, deleteBtn,
   );
 

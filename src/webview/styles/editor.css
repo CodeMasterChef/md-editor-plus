@@ -3356,6 +3356,23 @@ html.theme-dark .ProseMirror .mb-vTb-grid.mb-vTb-active {
 .ProseMirror .mb-vCtx-swatch:hover { transform: scale(1.1); }
 .ProseMirror .mb-vCtx-dup svg { width: 11px; height: 11px; }
 
+.ProseMirror .mb-vCtx-more { font-weight: 700; font-size: 13px; }
+.ProseMirror .mb-vCtx-morepop {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  min-width: 180px;
+  display: flex;
+  flex-direction: column;
+  background: #1f1f23;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 6px;
+  padding: 4px;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.18);
+  z-index: 27;
+}
+.ProseMirror .mb-vCtx-morepop.mb-hidden { display: none; }
+
 /* ===========================================================================
    Phase 7: zoom + pan viewport
    =========================================================================== */
