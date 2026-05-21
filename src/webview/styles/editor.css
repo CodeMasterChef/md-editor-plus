@@ -3279,23 +3279,26 @@ html.theme-dark .ProseMirror .mb-vTb-grid.mb-vTb-active {
   border-radius: 2px;
 }
 
-/* Lock badge over locked nodes. */
-.ProseMirror .mb-vLockBadge {
-  position: absolute;
-  width: 18px;
-  height: 18px;
-  background: #1f1f23;
-  color: #ffffff;
-  border: 1.5px solid #ffffff;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  pointer-events: none;
-  z-index: 21;
+/* Lock badge intentionally not rendered any more — the toolbar's Lock
+   button is the single source of truth. Keeping the selector here as a
+   harmless no-op in case any cached DOM has the class. */
+.ProseMirror .mb-vLockBadge { display: none !important; }
+
+/* Edge-draft target highlight: when dragging a new edge over a candidate
+   destination, the node's outer shape gets a green glow so the user knows
+   "release here". */
+.ProseMirror .mb-visual g.node.mb-vEdgeTarget > rect,
+.ProseMirror .mb-visual g.node.mb-vEdgeTarget > circle,
+.ProseMirror .mb-visual g.node.mb-vEdgeTarget > ellipse,
+.ProseMirror .mb-visual g.node.mb-vEdgeTarget > polygon,
+.ProseMirror .mb-visual g.node.mb-vEdgeTarget > path,
+.ProseMirror .mb-visual g.node.mb-vEdgeTarget .basic > rect,
+.ProseMirror .mb-visual g.node.mb-vEdgeTarget .basic > polygon,
+.ProseMirror .mb-visual g.node.mb-vEdgeTarget .basic > path {
+  stroke: #22c55e !important;
+  stroke-width: 2.5 !important;
+  filter: drop-shadow(0 0 6px rgba(34, 197, 94, 0.45));
 }
-.ProseMirror .mb-vLockBadge svg { width: 10px; height: 10px; }
-.ProseMirror .mb-vLockBadge.mb-hidden { display: none; }
 
 /* Context-tip lock button — visually toggled when state is on. */
 .ProseMirror .mb-vCtx-lock { display: inline-flex; align-items: center; justify-content: center; padding: 3px 6px; }

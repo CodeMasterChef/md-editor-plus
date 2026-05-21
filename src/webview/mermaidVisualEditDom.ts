@@ -233,7 +233,8 @@ export function createVisualEditor(opts: VisualEditorOptions): VisualEditorHandl
   marqueeEl.className = 'mb-vMarquee mb-hidden';
   marqueeEl.contentEditable = 'false';
 
-  // Lock badge pool (one per visible locked node).
+  // Lock badge pool — left for compatibility; no badges are mounted any more
+  // (the Lock button in the toolbar is the only indicator).
   const lockBadges: HTMLElement[] = [];
 
   // Phase 7: zoom controls in the bottom-right corner.
@@ -706,7 +707,13 @@ export function createVisualEditor(opts: VisualEditorOptions): VisualEditorHandl
   //  - edge    : drag from a connection-point dot → new edge
   let drag: DragCandidate | null = null;
   let marquee: { x1: number; y1: number; x2: number; y2: number; additive: boolean } | null = null;
-  let edgeDraft: { fromId: string; fromX: number; fromY: number; pathEl: SVGPathElement | null } | null = null;
+  let edgeDraft: {
+    fromId:        string;
+    fromX:         number;     // hook position in SVG coords (the dot the user grabbed)
+    fromY:         number;
+    pathEl:        SVGPathElement | null;
+    currentTarget: string | null;  // id of node currently hovered
+  } | null = null;
   let pan: { startX: number; startY: number; originTx: number; originTy: number } | null = null;
   let spaceHeld = false;
   let suppressNextClick = false;
@@ -734,16 +741,21 @@ export function createVisualEditor(opts: VisualEditorOptions): VisualEditorHandl
 
     if (activeTool !== 'select') return;
 
-    // Connection-point dot → start edge draft.
-    const dotEl = (e.target as Element).closest?.('.mb-vConn-dot');
+    // Connection-point dot → start edge draft. The source hook is the dot
+    // the user grabbed (not the node center), so the line emerges cleanly
+    // from that side.
+    const dotEl = (e.target as Element).closest?.('.mb-vConn-dot') as HTMLElement | null;
     if (dotEl && selectedId) {
       const sourceEl = findNodeElementById(selectedId, opts.previewPane) as SVGGElement | null;
-      const origin = sourceEl ? readNodeTranslate(sourceEl) : null;
-      if (sourceEl && origin) {
-        edgeDraft = { fromId: selectedId, fromX: origin.x, fromY: origin.y, pathEl: null };
-        e.preventDefault();
-        e.stopPropagation();
-        return;
+      if (sourceEl) {
+        const side = (dotEl.dataset.side ?? 'e') as 'n' | 'e' | 's' | 'w';
+        const hook = nodeHookPosition(sourceEl, side);
+        if (hook) {
+          edgeDraft = { fromId: selectedId, fromX: hook.x, fromY: hook.y, pathEl: null, currentTarget: null };
+          e.preventDefault();
+          e.stopPropagation();
+          return;
+        }
       }
     }
 
@@ -800,7 +812,8 @@ export function createVisualEditor(opts: VisualEditorOptions): VisualEditorHandl
       applyViewport();
       return;
     }
-    // Edge draft path
+    // Edge draft path: while dragging, hover-detect a target node, highlight it,
+    // and snap the bezier endpoint to the target's closest hook.
     if (edgeDraft) {
       const svgPt = clientToSvgPoint(e.clientX, e.clientY, opts.previewPane);
       if (!svgPt) return;
@@ -816,7 +829,39 @@ export function createVisualEditor(opts: VisualEditorOptions): VisualEditorHandl
         edgeDraft.pathEl.setAttribute('pointer-events', 'none');
         svg.appendChild(edgeDraft.pathEl);
       }
-      edgeDraft.pathEl.setAttribute('d', bezierPath({ x: edgeDraft.fromX, y: edgeDraft.fromY }, svgPt));
+
+      // Hit-test under the cursor for a target node (skip the source).
+      // elementFromPoint is more reliable than e.target during drag, which
+      // can sometimes still be the dot or path.
+      const hit = elementAtPoint(e.clientX, e.clientY, opts.previewPane);
+      const hitTarget = findMermaidNode(hit, opts.previewPane);
+      const newTargetId = (hitTarget && hitTarget.id !== edgeDraft.fromId) ? hitTarget.id : null;
+
+      // Update highlight class on target nodes.
+      if (newTargetId !== edgeDraft.currentTarget) {
+        if (edgeDraft.currentTarget) {
+          const prev = findNodeElementById(edgeDraft.currentTarget, opts.previewPane);
+          prev?.classList.remove('mb-vEdgeTarget');
+        }
+        if (newTargetId) {
+          const next = findNodeElementById(newTargetId, opts.previewPane);
+          next?.classList.add('mb-vEdgeTarget');
+        }
+        edgeDraft.currentTarget = newTargetId;
+      }
+
+      // Compute endpoint: snap to target's nearest hook if we're over one,
+      // else free-flowing under the cursor.
+      let endPoint: { x: number; y: number };
+      if (newTargetId) {
+        const targetEl = findNodeElementById(newTargetId, opts.previewPane) as SVGGElement | null;
+        const hook = targetEl ? closestHook(targetEl, { x: edgeDraft.fromX, y: edgeDraft.fromY }) : null;
+        endPoint = hook ?? svgPt;
+      } else {
+        endPoint = svgPt;
+      }
+
+      edgeDraft.pathEl.setAttribute('d', bezierPath({ x: edgeDraft.fromX, y: edgeDraft.fromY }, endPoint));
       return;
     }
 
@@ -880,12 +925,21 @@ export function createVisualEditor(opts: VisualEditorOptions): VisualEditorHandl
       opts.previewPane.classList.remove('mb-panning');
       return;
     }
-    // Edge draft → commit if landed on a node.
+    // Edge draft → commit if landed on a node. Prefer the tracked target
+    // (set during mousemove via elementFromPoint) since e.target during
+    // mouseup can be our draft path or another overlay.
     if (edgeDraft) {
-      const hit = findMermaidNode(e.target as Element, opts.previewPane);
-      if (hit && hit.id !== edgeDraft.fromId) {
+      // Clear hover highlight regardless.
+      if (edgeDraft.currentTarget) {
+        const prev = findNodeElementById(edgeDraft.currentTarget, opts.previewPane);
+        prev?.classList.remove('mb-vEdgeTarget');
+      }
+      const targetId = edgeDraft.currentTarget
+        ?? findMermaidNode(elementAtPoint(e.clientX, e.clientY, opts.previewPane), opts.previewPane)?.id
+        ?? null;
+      if (targetId && targetId !== edgeDraft.fromId) {
         const fromId = edgeDraft.fromId;
-        const toId   = hit.id;
+        const toId   = targetId;
         mutate((ast) => { addEdge(ast, fromId, toId); });
       }
       if (edgeDraft.pathEl) edgeDraft.pathEl.remove();
@@ -1094,35 +1148,10 @@ export function createVisualEditor(opts: VisualEditorOptions): VisualEditorHandl
   }
 
   function refreshLockBadges(): void {
-    const ast = parseMermaid(opts.getSource());
-    const locks = getLocks(ast);
-    // Only show badges for currently-rendered nodes that are locked.
-    let badgeIdx = 0;
-    if (locks) {
-      const nodes = opts.previewPane.querySelectorAll<SVGGElement>('g.node');
-      for (const n of Array.from(nodes)) {
-        const id = extractMermaidId(n);
-        if (!id || !locks.has(id)) continue;
-        const rect = n.getBoundingClientRect();
-        const hostRect = opts.previewPane.getBoundingClientRect();
-        let badge = lockBadges[badgeIdx];
-        if (!badge) {
-          badge = document.createElement('div');
-          badge.className = 'mb-vLockBadge';
-          badge.innerHTML = `<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M17 11V7a5 5 0 0 0-10 0v4H5v11h14V11h-2zm-8-4a3 3 0 1 1 6 0v4H9V7z"/></svg>`;
-          opts.previewPane.appendChild(badge);
-          lockBadges.push(badge);
-        }
-        badge.style.left = `${rect.right - hostRect.left - 18}px`;
-        badge.style.top  = `${rect.top   - hostRect.top  - 4}px`;
-        badge.classList.remove('mb-hidden');
-        badgeIdx++;
-      }
-    }
-    // Hide unused badges in the pool.
-    for (let i = badgeIdx; i < lockBadges.length; i++) {
-      lockBadges[i].classList.add('mb-hidden');
-    }
+    // Lock badges removed by request — the toolbar's Lock button (with the
+    // `mb-vCtx-lock-on` class when active) is the single source of truth
+    // for lock state. Keep the helper as a no-op so existing call sites
+    // don't need to change.
   }
 
   function openRenameFor(target: { id: string; el: Element }): void {
@@ -1670,6 +1699,56 @@ function findNodeElementById(id: string, host: HTMLElement): Element | null {
   return null;
 }
 
+/** Return the (x,y) in SVG coords of a node's hook on the given side. */
+function nodeHookPosition(g: SVGGElement, side: 'n' | 'e' | 's' | 'w'): { x: number; y: number } | null {
+  const t = readNodeTranslate(g);
+  if (!t) return null;
+  const half = nodeHalfExtent(g);
+  switch (side) {
+    case 'n': return { x: t.x,            y: t.y - half.h };
+    case 's': return { x: t.x,            y: t.y + half.h };
+    case 'e': return { x: t.x + half.w,   y: t.y };
+    case 'w': return { x: t.x - half.w,   y: t.y };
+  }
+}
+
+/** Pick the hook (N/E/S/W) on `g` closest to the given point. */
+function closestHook(g: SVGGElement, p: { x: number; y: number }): { x: number; y: number } | null {
+  const sides: Array<'n' | 'e' | 's' | 'w'> = ['n', 'e', 's', 'w'];
+  let best: { x: number; y: number } | null = null;
+  let bestD = Infinity;
+  for (const s of sides) {
+    const h = nodeHookPosition(g, s);
+    if (!h) continue;
+    const d = Math.hypot(h.x - p.x, h.y - p.y);
+    if (d < bestD) { bestD = d; best = h; }
+  }
+  return best;
+}
+
+/** document.elementFromPoint, but climb out of any of our drag-related
+    overlays (.mb-vEdgeDraft path, the connection dot) so we see the
+    SVG nodes underneath. */
+function elementAtPoint(clientX: number, clientY: number, host: HTMLElement): Element | null {
+  let el = document.elementFromPoint(clientX, clientY) as Element | null;
+  while (el && host.contains(el)) {
+    // If we hit our own edge-draft path or a connection dot, look beneath.
+    if (el.classList.contains('mb-vEdgeDraft') ||
+        el.classList.contains('mb-vConn-dot')  ||
+        el.classList.contains('mb-vConn')) {
+      // Temporarily hide pointer events on this element to peek underneath.
+      const prev = (el as HTMLElement).style.pointerEvents;
+      (el as HTMLElement).style.pointerEvents = 'none';
+      const beneath = document.elementFromPoint(clientX, clientY) as Element | null;
+      (el as HTMLElement).style.pointerEvents = prev;
+      el = beneath;
+      continue;
+    }
+    return el;
+  }
+  return el;
+}
+
 function extractMermaidId(g: Element): string | null {
   const rawId = g.getAttribute('id') ?? '';
   // Common forms across mermaid versions:
@@ -1820,32 +1899,48 @@ export function applyStylesOverlay(ast: Ast, host: HTMLElement): void {
 
 function applyStyleToNode(g: SVGGElement, s: NodeStyle): void {
   // Background shape: rect / circle / polygon / path drawn inside g.node.
-  // Mermaid often wraps these in <g class="basic ...">.
+  // Mermaid often wraps these in <g class="basic ...">. Mermaid v11 sets
+  // inline `style="fill:..."` on the shape elements, which BEATS a plain
+  // `fill="..."` attribute. So we must override via the `style` property
+  // (CSSStyleDeclaration). Setting both keeps us compatible with older
+  // mermaid versions.
   const shapes = g.querySelectorAll<SVGGraphicsElement>(
     'rect, circle, ellipse, polygon, path',
   );
   for (const el of Array.from(shapes)) {
-    // Skip the foreignObject label's nested rendering — we only want the
-    // outer shape. Mermaid renders the foreignObject content in HTML so it
-    // doesn't appear in this query.
-    if (s.fill   !== undefined) el.setAttribute('fill',   s.fill);
-    if (s.border !== undefined) el.setAttribute('stroke', s.border);
+    if (s.fill !== undefined) {
+      el.setAttribute('fill', s.fill);
+      el.style.setProperty('fill', s.fill, 'important');
+    }
+    if (s.border !== undefined) {
+      el.setAttribute('stroke', s.border);
+      el.style.setProperty('stroke', s.border, 'important');
+    }
   }
 
   // Label color + font size + weight live in a foreignObject containing
-  // .nodeLabel (mermaid v11).
-  const labelDiv = g.querySelector<HTMLElement>('foreignObject .nodeLabel, foreignObject div, .label');
-  if (labelDiv) {
-    if (s.text     !== undefined) labelDiv.style.color      = s.text;
-    if (s.fontSize !== undefined) labelDiv.style.fontSize   = `${s.fontSize}px`;
-    if (s.bold     !== undefined) labelDiv.style.fontWeight = s.bold ? '700' : '';
+  // .nodeLabel (mermaid v11). Use !important since mermaid stylesheets often
+  // set these via class rules with higher specificity.
+  const labelDivs = g.querySelectorAll<HTMLElement>('foreignObject .nodeLabel, foreignObject div, .label, span.nodeLabel');
+  for (const labelDiv of Array.from(labelDivs)) {
+    if (s.text     !== undefined) labelDiv.style.setProperty('color',       s.text,           'important');
+    if (s.fontSize !== undefined) labelDiv.style.setProperty('font-size',   `${s.fontSize}px`, 'important');
+    if (s.bold     !== undefined) labelDiv.style.setProperty('font-weight', s.bold ? '700' : '', 'important');
   }
   // Some mermaid versions render labels as <text> directly.
   const textEl = g.querySelector<SVGTextElement>('text.nodeLabel, text');
   if (textEl) {
-    if (s.text     !== undefined) textEl.setAttribute('fill', s.text);
-    if (s.fontSize !== undefined) textEl.setAttribute('font-size', String(s.fontSize));
-    if (s.bold     !== undefined) textEl.setAttribute('font-weight', s.bold ? '700' : '400');
+    if (s.text     !== undefined) {
+      textEl.setAttribute('fill', s.text);
+      textEl.style.setProperty('fill', s.text, 'important');
+    }
+    if (s.fontSize !== undefined) {
+      textEl.setAttribute('font-size', String(s.fontSize));
+      textEl.style.setProperty('font-size', `${s.fontSize}px`, 'important');
+    }
+    if (s.bold !== undefined) {
+      textEl.setAttribute('font-weight', s.bold ? '700' : '400');
+    }
   }
 }
 
