@@ -3229,3 +3229,82 @@ html.theme-dark .ProseMirror .mb-vTb-grid.mb-vTb-active {
 .ProseMirror .mb-vGuides {
   pointer-events: none;
 }
+
+/* ===========================================================================
+   Phase 4: multi-select, connection points, marquee, lock UI
+   =========================================================================== */
+
+/* Polished selection ring — solid light-blue. */
+.ProseMirror .mb-vSel {
+  border-style: solid;
+  border-width: 2px;
+  border-color: var(--link);
+  background: rgba(99, 102, 241, 0.04);
+  border-radius: 5px;
+}
+
+/* Connection-point layer wraps the primary selected node; the 4 dots sit at
+   the midpoints of its bbox. */
+.ProseMirror .mb-vConn {
+  position: absolute;
+  pointer-events: none;
+  z-index: 24;
+}
+.ProseMirror .mb-vConn-dot {
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #ffffff;
+  border: 1.5px solid var(--link);
+  pointer-events: auto;
+  cursor: crosshair;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12);
+}
+.ProseMirror .mb-vConn-dot:hover {
+  background: var(--link);
+}
+.ProseMirror .mb-vConn-n { left: 50%; top:    0;    transform: translate(-50%, -50%); }
+.ProseMirror .mb-vConn-s { left: 50%; bottom: 0;    transform: translate(-50%,  50%); }
+.ProseMirror .mb-vConn-e { right: 0;  top:   50%;   transform: translate( 50%, -50%); }
+.ProseMirror .mb-vConn-w { left: 0;   top:   50%;   transform: translate(-50%, -50%); }
+
+/* Marquee rect during drag-select. */
+.ProseMirror .mb-vMarquee {
+  position: absolute;
+  border: 1px dashed var(--link);
+  background: rgba(99, 102, 241, 0.08);
+  pointer-events: none;
+  z-index: 23;
+  border-radius: 2px;
+}
+
+/* Lock badge over locked nodes. */
+.ProseMirror .mb-vLockBadge {
+  position: absolute;
+  width: 18px;
+  height: 18px;
+  background: #1f1f23;
+  color: #ffffff;
+  border: 1.5px solid #ffffff;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  z-index: 21;
+}
+.ProseMirror .mb-vLockBadge svg { width: 10px; height: 10px; }
+.ProseMirror .mb-vLockBadge.mb-hidden { display: none; }
+
+/* Context-tip lock button — visually toggled when state is on. */
+.ProseMirror .mb-vCtx-lock { display: inline-flex; align-items: center; justify-content: center; padding: 3px 6px; }
+.ProseMirror .mb-vCtx-lock.mb-vCtx-lock-on { background: rgba(255, 255, 255, 0.16); color: #fde68a; }
+.ProseMirror .mb-vCtx-multi {
+  display: inline-block;
+  padding: 0 7px;
+  font: 500 11px var(--font-body);
+  color: #ffffff;
+  opacity: 0.85;
+}
+.ProseMirror .mb-vCtx-multi.mb-hidden { display: none; }

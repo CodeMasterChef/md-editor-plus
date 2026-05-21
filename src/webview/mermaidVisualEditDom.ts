@@ -13,6 +13,7 @@ import {
   addNode, renameNode, deleteNode, addEdge, changeNodeShape,
   collectNodes, NodeShape, Ast,
   getPositions, setAllPositions, setPosition, clearPositions, PositionMap,
+  getLocks, isLocked, toggleLock,
 } from './mermaidVisualEdit';
 
 export type Tool = 'select' | 'rect' | 'pill' | 'circle' | 'diamond' | 'arrow' | 'text';
@@ -70,7 +71,14 @@ const TOOL_HOTKEYS: Record<string, Tool> = {
 
 export function createVisualEditor(opts: VisualEditorOptions): VisualEditorHandle {
   let activeTool: Tool = 'select';
+  // Multi-select: `selectedIds` is the canonical store. `selectedId` mirrors
+  // the single-selection convenience (set only when size === 1) so the rest
+  // of the file's existing single-node logic continues to work unchanged.
+  const selectedIds = new Set<string>();
   let selectedId: string | null = null;
+  function syncSelectedId(): void {
+    selectedId = selectedIds.size === 1 ? selectedIds.values().next().value as string : null;
+  }
   // For Arrow tool — first click captures the source node, second click connects.
   let pendingFromId: string | null = null;
 
@@ -98,15 +106,30 @@ export function createVisualEditor(opts: VisualEditorOptions): VisualEditorHandl
   });
   const selectionRing = document.createElement('div');
   selectionRing.className = 'mb-vSel mb-hidden';
+  // Additional rings for multi-selected nodes — pooled.
+  const extraRings: HTMLDivElement[] = [];
   const contextTip = buildContextTip({
     onDelete: () => {
-      if (!selectedId) return;
-      mutate((ast) => deleteNode(ast, selectedId!));
+      const targetIds = Array.from(selectedIds);
+      if (targetIds.length === 0) return;
+      mutate((ast) => {
+        const locks = getLocks(ast) ?? new Set<string>();
+        for (const id of targetIds) {
+          if (!locks.has(id)) deleteNode(ast, id);
+        }
+      });
       setSelected(null);
     },
     onShape: (shape) => {
       if (!selectedId) return;
       mutate((ast) => changeNodeShape(ast, selectedId!, shape));
+    },
+    onToggleLock: () => {
+      const targetIds = Array.from(selectedIds);
+      if (targetIds.length === 0) return;
+      mutate((ast) => {
+        for (const id of targetIds) toggleLock(ast, id);
+      });
     },
   });
   const renameOverlay = buildRenameOverlay({
@@ -121,10 +144,35 @@ export function createVisualEditor(opts: VisualEditorOptions): VisualEditorHandl
   pendingPin.className = 'mb-vPin mb-hidden';
   pendingPin.textContent = 'Click another node to connect';
 
+  // ── Phase 4 overlays: connection points + marquee + lock badges ────────
+  // Container for the 4 connection points around the primary selected node.
+  const connectionLayer = document.createElement('div');
+  connectionLayer.className = 'mb-vConn mb-hidden';
+  connectionLayer.contentEditable = 'false';
+  const connSides: Array<'n' | 'e' | 's' | 'w'> = ['n', 'e', 's', 'w'];
+  const connDots: Record<string, HTMLElement> = {};
+  for (const side of connSides) {
+    const d = document.createElement('div');
+    d.className = `mb-vConn-dot mb-vConn-${side}`;
+    d.dataset.side = side;
+    connDots[side] = d;
+    connectionLayer.appendChild(d);
+  }
+
+  // Marquee selection rect.
+  const marqueeEl = document.createElement('div');
+  marqueeEl.className = 'mb-vMarquee mb-hidden';
+  marqueeEl.contentEditable = 'false';
+
+  // Lock badge pool (one per visible locked node).
+  const lockBadges: HTMLElement[] = [];
+
   // All overlays live in the preview pane so the NodeView's ignoreMutation
   // hook (which already trusts preview-pane mutations) doesn't fight us.
   opts.previewPane.appendChild(toolbar.el);
   opts.previewPane.appendChild(selectionRing);
+  opts.previewPane.appendChild(connectionLayer);
+  opts.previewPane.appendChild(marqueeEl);
   opts.previewPane.appendChild(contextTip.el);
   opts.previewPane.appendChild(renameOverlay.el);
   opts.previewPane.appendChild(pendingPin);
@@ -144,13 +192,20 @@ export function createVisualEditor(opts: VisualEditorOptions): VisualEditorHandl
 
     if (activeTool === 'select') {
       if (targetNode) {
-        // Click on the already-selected node opens rename.
-        if (targetNode.id === selectedId) {
-          openRenameFor(targetNode);
+        const shift = e.shiftKey;
+        // Shift-click toggles in the selection (add/remove). Plain click on
+        // the already-selected single node opens rename (unless locked).
+        if (shift) {
+          setSelected(targetNode.id, 'toggle');
+        } else if (selectedIds.size === 1 && targetNode.id === selectedId) {
+          const ast = parseMermaid(opts.getSource());
+          if (!isLocked(ast, targetNode.id)) {
+            openRenameFor(targetNode);
+          }
         } else {
-          setSelected(targetNode.id);
+          setSelected(targetNode.id, 'replace');
         }
-      } else {
+      } else if (!e.shiftKey) {
         setSelected(null);
       }
       return;
@@ -240,15 +295,36 @@ export function createVisualEditor(opts: VisualEditorOptions): VisualEditorHandl
     }
 
     if (e.key === 'Delete' || e.key === 'Backspace') {
-      if (!selectedId) return;
+      if (selectedIds.size === 0) return;
       e.preventDefault();
-      mutate((ast) => deleteNode(ast, selectedId!));
+      const targetIds = Array.from(selectedIds);
+      mutate((ast) => {
+        const locks = getLocks(ast) ?? new Set<string>();
+        for (const id of targetIds) {
+          if (!locks.has(id)) deleteNode(ast, id);
+        }
+      });
       setSelected(null);
+      return;
+    }
+
+    if (meta && e.key.toLowerCase() === 'a') {
+      e.preventDefault();
+      selectedIds.clear();
+      const nodes = opts.previewPane.querySelectorAll<SVGGElement>('g.node');
+      for (const n of Array.from(nodes)) {
+        const id = extractMermaidId(n);
+        if (id) selectedIds.add(id);
+      }
+      syncSelectedId();
+      refreshSelectionUI();
       return;
     }
 
     if (e.key === 'Enter' && selectedId) {
       e.preventDefault();
+      const ast = parseMermaid(opts.getSource());
+      if (isLocked(ast, selectedId)) return;
       const nodeEl = findNodeElementById(selectedId, opts.previewPane);
       if (nodeEl) openRenameFor({ id: selectedId, el: nodeEl });
       return;
@@ -342,89 +418,199 @@ export function createVisualEditor(opts: VisualEditorOptions): VisualEditorHandl
   // to the mermaid SVG. On release we commit the new position to the source.
   // Non-moving mousedown→mouseup falls through to the click handler so
   // selection still works.
-  interface DragCandidate {
+  interface DragMember {
     id:        string;
     nodeEl:    SVGGElement;
+    originX:   number;
+    originY:   number;
+  }
+  interface DragCandidate {
+    primary:   DragMember;            // node the cursor actually grabbed
+    members:   DragMember[];          // every node moving (1 for single, N for multi)
     startX:    number;
     startY:    number;
-    originSvgX:number;
-    originSvgY:number;
     scale:     number;
     moved:     boolean;
   }
+  // Three mutually-exclusive gestures share the mouse:
+  //  - drag    : node reposition (single or multi)
+  //  - marquee : drag on empty canvas → multi-select
+  //  - edge    : drag from a connection-point dot → new edge
   let drag: DragCandidate | null = null;
+  let marquee: { x1: number; y1: number; x2: number; y2: number; additive: boolean } | null = null;
+  let edgeDraft: { fromId: string; fromX: number; fromY: number; pathEl: SVGPathElement | null } | null = null;
   let suppressNextClick = false;
   const DRAG_THRESHOLD = 4;
 
   function onDragMouseDown(e: MouseEvent): void {
     if (activeTool !== 'select') return;
     if (e.button !== 0) return; // left button only
+
+    // Connection-point dot → start edge draft.
+    const dotEl = (e.target as Element).closest?.('.mb-vConn-dot');
+    if (dotEl && selectedId) {
+      const sourceEl = findNodeElementById(selectedId, opts.previewPane) as SVGGElement | null;
+      const origin = sourceEl ? readNodeTranslate(sourceEl) : null;
+      if (sourceEl && origin) {
+        edgeDraft = { fromId: selectedId, fromX: origin.x, fromY: origin.y, pathEl: null };
+        e.preventDefault();
+        e.stopPropagation();
+        return;
+      }
+    }
+
     const hit = findMermaidNode(e.target as Element, opts.previewPane);
-    if (!hit) return;
+    if (!hit) {
+      // Empty canvas mousedown with Select tool → start marquee.
+      // (Don't start marquee for clicks inside our own UI overlays — those have
+      //  their own pointer handlers and shouldn't trigger selection drag.)
+      const inOverlay = (e.target as Element).closest('.mb-vTb, .mb-vCtx, .mb-vConn, .mb-snackbar, .mb-vRename, .mb-vPin, .mb-svg-host svg');
+      if (!inOverlay) {
+        marquee = { x1: e.clientX, y1: e.clientY, x2: e.clientX, y2: e.clientY, additive: e.shiftKey };
+      }
+      return;
+    }
     const nodeEl = hit.el as SVGGElement;
     const origin = readNodeTranslate(nodeEl);
     if (!origin) return;
     const svg = nodeEl.ownerSVGElement;
     if (!svg) return;
+
+    // Decide single vs multi drag. If the hit node is part of an existing
+    // multi-selection, all selected (non-locked) nodes move together. If
+    // not, fall back to single-node drag (selection follows on mouseup).
+    const ast = parseMermaid(opts.getSource());
+    const locks = getLocks(ast) ?? new Set<string>();
+    const partOfSelection = selectedIds.has(hit.id) && selectedIds.size > 1;
+    const memberIds: string[] = partOfSelection ? Array.from(selectedIds) : [hit.id];
+    const members: DragMember[] = [];
+    for (const id of memberIds) {
+      if (locks.has(id)) continue;
+      const el = findNodeElementById(id, opts.previewPane) as SVGGElement | null;
+      if (!el) continue;
+      const o = readNodeTranslate(el);
+      if (!o) continue;
+      members.push({ id, nodeEl: el, originX: o.x, originY: o.y });
+    }
+    if (members.length === 0) return; // every candidate is locked
+
+    const primary = members.find(m => m.id === hit.id) ?? members[0];
     drag = {
-      id:         hit.id,
-      nodeEl,
-      startX:     e.clientX,
-      startY:     e.clientY,
-      originSvgX: origin.x,
-      originSvgY: origin.y,
-      scale:      svgUnitsPerPixel(svg),
-      moved:      false,
+      primary,
+      members,
+      startX:  e.clientX,
+      startY:  e.clientY,
+      scale:   svgUnitsPerPixel(svg),
+      moved:   false,
     };
   }
 
   function onDragMouseMove(e: MouseEvent): void {
+    // Edge draft path
+    if (edgeDraft) {
+      const svgPt = clientToSvgPoint(e.clientX, e.clientY, opts.previewPane);
+      if (!svgPt) return;
+      const svg = opts.previewPane.querySelector<SVGSVGElement>('.mb-svg-host svg');
+      if (!svg) return;
+      if (!edgeDraft.pathEl) {
+        edgeDraft.pathEl = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+        edgeDraft.pathEl.setAttribute('class', 'mb-vEdgeDraft');
+        edgeDraft.pathEl.setAttribute('fill', 'none');
+        edgeDraft.pathEl.setAttribute('stroke', '#6366f1');
+        edgeDraft.pathEl.setAttribute('stroke-width', '1.5');
+        edgeDraft.pathEl.setAttribute('stroke-dasharray', '4 3');
+        edgeDraft.pathEl.setAttribute('pointer-events', 'none');
+        svg.appendChild(edgeDraft.pathEl);
+      }
+      edgeDraft.pathEl.setAttribute('d', bezierPath({ x: edgeDraft.fromX, y: edgeDraft.fromY }, svgPt));
+      return;
+    }
+
+    if (marquee) {
+      marquee.x2 = e.clientX;
+      marquee.y2 = e.clientY;
+      paintMarquee();
+      applyMarqueeSelection();
+      return;
+    }
+
     if (!drag) return;
     const dx = e.clientX - drag.startX;
     const dy = e.clientY - drag.startY;
     if (!drag.moved && Math.hypot(dx, dy) < DRAG_THRESHOLD) return;
     drag.moved = true;
     opts.previewPane.classList.add('mb-dragging');
-    let newSvgX = drag.originSvgX + dx * drag.scale;
-    let newSvgY = drag.originSvgY + dy * drag.scale;
 
-    // Phase 3: alignment guides take precedence over grid snap.
-    const otherNodes = collectOtherNodes(drag.id, opts.previewPane);
-    const dragHalf = nodeHalfExtent(drag.nodeEl);
-    const snap = computeAlignmentSnap({ x: newSvgX, y: newSvgY }, dragHalf, otherNodes);
-    if (snap.snapX !== null) newSvgX = snap.snapX;
-    if (snap.snapY !== null) newSvgY = snap.snapY;
-    if (snap.guides.length > 0) {
-      guideLayer.show(snap.guides);
-    } else if (gridSnapEnabled) {
-      const GRID = 8;
-      newSvgX = Math.round(newSvgX / GRID) * GRID;
-      newSvgY = Math.round(newSvgY / GRID) * GRID;
-      guideLayer.hide();
+    const isMulti = drag.members.length > 1;
+    // For multi-drag we skip alignment guides — they get noisy fast.
+    let snapDxSvg = dx * drag.scale;
+    let snapDySvg = dy * drag.scale;
+    if (!isMulti) {
+      const newSvgX = drag.primary.originX + snapDxSvg;
+      const newSvgY = drag.primary.originY + snapDySvg;
+      const otherNodes = collectOtherNodes(drag.primary.id, opts.previewPane);
+      const dragHalf = nodeHalfExtent(drag.primary.nodeEl);
+      const snap = computeAlignmentSnap({ x: newSvgX, y: newSvgY }, dragHalf, otherNodes);
+      let finalX = snap.snapX !== null ? snap.snapX : newSvgX;
+      let finalY = snap.snapY !== null ? snap.snapY : newSvgY;
+      if (snap.guides.length > 0) {
+        guideLayer.show(snap.guides);
+      } else if (gridSnapEnabled) {
+        const GRID = 8;
+        finalX = Math.round(finalX / GRID) * GRID;
+        finalY = Math.round(finalY / GRID) * GRID;
+        guideLayer.hide();
+      } else {
+        guideLayer.hide();
+      }
+      snapDxSvg = finalX - drag.primary.originX;
+      snapDySvg = finalY - drag.primary.originY;
     } else {
       guideLayer.hide();
     }
 
-    drag.nodeEl.setAttribute('transform', `translate(${newSvgX}, ${newSvgY})`);
-    // Live edge update + ring tracking
-    recomputeEdgesTouching(drag.id, opts.previewPane);
-    positionRingAround(selectionRing, drag.nodeEl, opts.previewPane);
-    if (selectedId === drag.id) {
-      contextTip.showBelow(drag.nodeEl, opts.previewPane);
+    // Apply the same delta to every member.
+    for (const m of drag.members) {
+      const nx = m.originX + snapDxSvg;
+      const ny = m.originY + snapDySvg;
+      m.nodeEl.setAttribute('transform', `translate(${nx}, ${ny})`);
+      recomputeEdgesTouching(m.id, opts.previewPane);
     }
+    // Refresh selection rings + tip to follow the moved nodes.
+    refreshSelectionUI();
   }
 
-  function onDragMouseUp(_e: MouseEvent): void {
+  function onDragMouseUp(e: MouseEvent): void {
+    // Edge draft → commit if landed on a node.
+    if (edgeDraft) {
+      const hit = findMermaidNode(e.target as Element, opts.previewPane);
+      if (hit && hit.id !== edgeDraft.fromId) {
+        const fromId = edgeDraft.fromId;
+        const toId   = hit.id;
+        mutate((ast) => { addEdge(ast, fromId, toId); });
+      }
+      if (edgeDraft.pathEl) edgeDraft.pathEl.remove();
+      edgeDraft = null;
+      e.stopPropagation();
+      return;
+    }
+
+    if (marquee) {
+      // Final selection set already applied during mousemove.
+      marquee = null;
+      marqueeEl.classList.add('mb-hidden');
+      return;
+    }
+
     if (!drag) return;
     const wasDrag = drag.moved;
-    const id = drag.id;
-    const finalPos = readNodeTranslate(drag.nodeEl);
+    const movers = drag.members;
     drag = null;
     opts.previewPane.classList.remove('mb-dragging');
     guideLayer.hide();
-    if (!wasDrag || !finalPos) return;
+    if (!wasDrag) return;
     suppressNextClick = true;
-    // Commit. If this block had no positions yet, snapshot every node's
+    // Commit. If the block had no positions yet, snapshot every node's
     // current auto-layout position first so edges stay coherent.
     mutate((ast) => {
       if (!getPositions(ast)) {
@@ -438,8 +624,49 @@ export function createVisualEditor(opts: VisualEditorOptions): VisualEditorHandl
         }
         setAllPositions(ast, snapshot);
       }
-      setPosition(ast, id, finalPos.x, finalPos.y);
+      for (const m of movers) {
+        const finalPos = readNodeTranslate(m.nodeEl);
+        if (finalPos) setPosition(ast, m.id, finalPos.x, finalPos.y);
+      }
     });
+  }
+
+  function paintMarquee(): void {
+    if (!marquee) return;
+    const host = opts.previewPane.getBoundingClientRect();
+    const x = Math.min(marquee.x1, marquee.x2) - host.left;
+    const y = Math.min(marquee.y1, marquee.y2) - host.top;
+    const w = Math.abs(marquee.x2 - marquee.x1);
+    const h = Math.abs(marquee.y2 - marquee.y1);
+    marqueeEl.style.left   = `${x}px`;
+    marqueeEl.style.top    = `${y}px`;
+    marqueeEl.style.width  = `${w}px`;
+    marqueeEl.style.height = `${h}px`;
+    marqueeEl.classList.remove('mb-hidden');
+  }
+  function applyMarqueeSelection(): void {
+    if (!marquee) return;
+    const x1 = Math.min(marquee.x1, marquee.x2);
+    const y1 = Math.min(marquee.y1, marquee.y2);
+    const x2 = Math.max(marquee.x1, marquee.x2);
+    const y2 = Math.max(marquee.y1, marquee.y2);
+
+    const base = marquee.additive ? new Set(selectedIds) : new Set<string>();
+    const nodes = opts.previewPane.querySelectorAll<SVGGElement>('g.node');
+    for (const n of Array.from(nodes)) {
+      const id = extractMermaidId(n);
+      if (!id) continue;
+      const r = n.getBoundingClientRect();
+      const cx = r.left + r.width / 2;
+      const cy = r.top  + r.height / 2;
+      if (cx >= x1 && cx <= x2 && cy >= y1 && cy <= y2) {
+        base.add(id);
+      }
+    }
+    selectedIds.clear();
+    for (const id of base) selectedIds.add(id);
+    syncSelectedId();
+    refreshSelectionUI();
   }
 
   opts.previewPane.addEventListener('mousedown', onDragMouseDown, true);
@@ -459,23 +686,125 @@ export function createVisualEditor(opts: VisualEditorOptions): VisualEditorHandl
     if (tool !== 'select') setSelected(null);
   }
 
-  function setSelected(id: string | null): void {
-    selectedId = id;
+  type SelectMode = 'replace' | 'add' | 'toggle';
+
+  function setSelected(id: string | null, mode: SelectMode = 'replace'): void {
     renameOverlay.hide();
-    if (!id) {
+    if (id == null) {
+      selectedIds.clear();
+    } else if (mode === 'replace') {
+      selectedIds.clear();
+      selectedIds.add(id);
+    } else if (mode === 'add') {
+      selectedIds.add(id);
+    } else if (mode === 'toggle') {
+      if (selectedIds.has(id)) selectedIds.delete(id);
+      else                     selectedIds.add(id);
+    }
+    syncSelectedId();
+    refreshSelectionUI();
+  }
+
+  // Render selection rings + context tip from the canonical `selectedIds`.
+  function refreshSelectionUI(): void {
+    const ids = Array.from(selectedIds);
+
+    // Primary ring uses the first selected node; extras come from the pool.
+    if (ids.length === 0) {
       selectionRing.classList.add('mb-hidden');
+      for (const r of extraRings) r.classList.add('mb-hidden');
       contextTip.hide();
+      hideConnectionPoints();
       return;
     }
-    const nodeEl = findNodeElementById(id, opts.previewPane);
-    if (!nodeEl) {
+
+    const pivotEl = findNodeElementById(ids[0], opts.previewPane);
+    if (!pivotEl) {
       selectionRing.classList.add('mb-hidden');
       contextTip.hide();
+      hideConnectionPoints();
       return;
     }
-    positionRingAround(selectionRing, nodeEl, opts.previewPane);
+    positionRingAround(selectionRing, pivotEl, opts.previewPane);
     selectionRing.classList.remove('mb-hidden');
-    contextTip.showBelow(nodeEl, opts.previewPane);
+
+    // Resize the extra-ring pool to match the rest of the selection.
+    const needed = ids.length - 1;
+    while (extraRings.length < needed) {
+      const r = document.createElement('div');
+      r.className = 'mb-vSel mb-hidden';
+      opts.previewPane.appendChild(r);
+      extraRings.push(r);
+    }
+    for (let i = 0; i < extraRings.length; i++) {
+      const id = ids[i + 1];
+      if (!id) { extraRings[i].classList.add('mb-hidden'); continue; }
+      const el = findNodeElementById(id, opts.previewPane);
+      if (!el) { extraRings[i].classList.add('mb-hidden'); continue; }
+      positionRingAround(extraRings[i], el, opts.previewPane);
+      extraRings[i].classList.remove('mb-hidden');
+    }
+
+    // Context tip: single vs multi.
+    if (ids.length === 1) {
+      contextTip.showBelow(pivotEl, opts.previewPane);
+      const ast = parseMermaid(opts.getSource());
+      contextTip.setLocked(isLocked(ast, ids[0]));
+      showConnectionPoints(pivotEl);
+    } else {
+      contextTip.showMulti(ids.length, opts.previewPane, pivotEl);
+      hideConnectionPoints();
+    }
+
+    // Padlock badges over locked selected nodes.
+    refreshLockBadges();
+  }
+
+  function showConnectionPoints(nodeEl: Element): void {
+    const r = nodeEl.getBoundingClientRect();
+    const h = opts.previewPane.getBoundingClientRect();
+    const left = r.left - h.left;
+    const top  = r.top  - h.top;
+    connectionLayer.style.left   = `${left}px`;
+    connectionLayer.style.top    = `${top}px`;
+    connectionLayer.style.width  = `${r.width}px`;
+    connectionLayer.style.height = `${r.height}px`;
+    connectionLayer.classList.remove('mb-hidden');
+  }
+  function hideConnectionPoints(): void {
+    connectionLayer.classList.add('mb-hidden');
+  }
+
+  function refreshLockBadges(): void {
+    const ast = parseMermaid(opts.getSource());
+    const locks = getLocks(ast);
+    // Only show badges for currently-rendered nodes that are locked.
+    let badgeIdx = 0;
+    if (locks) {
+      const nodes = opts.previewPane.querySelectorAll<SVGGElement>('g.node');
+      for (const n of Array.from(nodes)) {
+        const id = extractMermaidId(n);
+        if (!id || !locks.has(id)) continue;
+        const rect = n.getBoundingClientRect();
+        const hostRect = opts.previewPane.getBoundingClientRect();
+        let badge = lockBadges[badgeIdx];
+        if (!badge) {
+          badge = document.createElement('div');
+          badge.className = 'mb-vLockBadge';
+          badge.innerHTML = `<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M17 11V7a5 5 0 0 0-10 0v4H5v11h14V11h-2zm-8-4a3 3 0 1 1 6 0v4H9V7z"/></svg>`;
+          opts.previewPane.appendChild(badge);
+          lockBadges.push(badge);
+        }
+        badge.style.left = `${rect.right - hostRect.left - 18}px`;
+        badge.style.top  = `${rect.top   - hostRect.top  - 4}px`;
+        badge.classList.remove('mb-hidden');
+        badgeIdx++;
+      }
+    }
+    // Hide unused badges in the pool.
+    for (let i = badgeIdx; i < lockBadges.length; i++) {
+      lockBadges[i].classList.add('mb-hidden');
+    }
   }
 
   function openRenameFor(target: { id: string; el: Element }): void {
@@ -515,14 +844,21 @@ export function createVisualEditor(opts: VisualEditorOptions): VisualEditorHandl
     onMermaidRerender(): void {
       // mermaidBlock already called applyPositionsOverlay for us before
       // this. We just refresh toolbar state and re-bind ring/tip to the
-      // (possibly newly-positioned) selected node.
+      // (possibly newly-positioned) selected nodes.
       const ast = parseMermaid(opts.getSource());
       toolbar.setResetEnabled(getPositions(ast) !== null);
-      if (!selectedId) return;
-      const nodeEl = findNodeElementById(selectedId, opts.previewPane);
-      if (!nodeEl) { setSelected(null); return; }
-      positionRingAround(selectionRing, nodeEl, opts.previewPane);
-      contextTip.showBelow(nodeEl, opts.previewPane);
+      // Drop any selectedIds that no longer have a node in the SVG.
+      const presentIds = new Set<string>();
+      const allNodes = opts.previewPane.querySelectorAll<SVGGElement>('g.node');
+      for (const n of Array.from(allNodes)) {
+        const id = extractMermaidId(n);
+        if (id) presentIds.add(id);
+      }
+      for (const id of Array.from(selectedIds)) {
+        if (!presentIds.has(id)) selectedIds.delete(id);
+      }
+      syncSelectedId();
+      refreshSelectionUI();
     },
     destroy(): void {
       opts.block.classList.remove('mb-visual-active');
@@ -534,9 +870,13 @@ export function createVisualEditor(opts: VisualEditorOptions): VisualEditorHandl
       document.removeEventListener('mouseup',     onDragMouseUp,   true);
       toolbar.el.remove();
       selectionRing.remove();
+      for (const r of extraRings) r.remove();
       contextTip.destroy();
       renameOverlay.destroy();
       pendingPin.remove();
+      connectionLayer.remove();
+      marqueeEl.remove();
+      for (const b of lockBadges) b.remove();
       guideLayer.destroy();
       if (nudgeTimer) clearTimeout(nudgeTimer);
     },
@@ -671,14 +1011,22 @@ function buildToolbar({ onPick, onReset, onToggleGrid }: ToolbarHandlers): Toolb
 interface ContextTipHandle {
   el:        HTMLElement;
   showBelow: (node: Element, host: HTMLElement) => void;
+  showMulti: (count: number, host: HTMLElement, pivot: Element) => void;
+  setLocked: (locked: boolean) => void;
   hide:      () => void;
   destroy:   () => void;
 }
 
-function buildContextTip(handlers: { onDelete: () => void; onShape: (s: NodeShape) => void }): ContextTipHandle {
+function buildContextTip(handlers: { onDelete: () => void; onShape: (s: NodeShape) => void; onToggleLock: () => void }): ContextTipHandle {
   const el = document.createElement('div');
   el.className = 'mb-vCtx mb-hidden';
   el.contentEditable = 'false';
+
+  // Multi-select summary chip (shown only when |selection| > 1).
+  const multiLabel = document.createElement('span');
+  multiLabel.className = 'mb-vCtx-multi mb-hidden';
+  multiLabel.textContent = '';
+  el.appendChild(multiLabel);
 
   const shapeBtn = document.createElement('button');
   shapeBtn.type = 'button';
@@ -717,6 +1065,21 @@ function buildContextTip(handlers: { onDelete: () => void; onShape: (s: NodeShap
   const sep = document.createElement('span');
   sep.className = 'mb-vCtx-sep';
 
+  const lockBtn = document.createElement('button');
+  lockBtn.type = 'button';
+  lockBtn.className = 'mb-vCtx-btn mb-vCtx-lock';
+  lockBtn.setAttribute('aria-label', 'Lock node');
+  lockBtn.innerHTML = `<svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>`;
+  lockBtn.addEventListener('mousedown', (e) => { e.preventDefault(); e.stopPropagation(); });
+  lockBtn.addEventListener('click', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    handlers.onToggleLock();
+  });
+
+  const sep2 = document.createElement('span');
+  sep2.className = 'mb-vCtx-sep';
+
   const deleteBtn = document.createElement('button');
   deleteBtn.type = 'button';
   deleteBtn.className = 'mb-vCtx-btn mb-vCtx-danger';
@@ -729,7 +1092,7 @@ function buildContextTip(handlers: { onDelete: () => void; onShape: (s: NodeShap
     handlers.onDelete();
   });
 
-  el.append(shapeBtn, shapeMenu, sep, deleteBtn);
+  el.append(shapeBtn, shapeMenu, sep, lockBtn, sep2, deleteBtn);
 
   function showBelow(node: Element, host: HTMLElement): void {
     const nodeRect = node.getBoundingClientRect();
@@ -737,7 +1100,30 @@ function buildContextTip(handlers: { onDelete: () => void; onShape: (s: NodeShap
     el.style.left = `${nodeRect.left - hostRect.left + nodeRect.width / 2}px`;
     el.style.top  = `${nodeRect.bottom - hostRect.top + 8}px`;
     el.classList.remove('mb-hidden');
+    // Single-select mode — show shape button, hide multi label.
+    shapeBtn.classList.remove('mb-hidden');
+    sep.classList.remove('mb-hidden');
+    multiLabel.classList.add('mb-hidden');
     shapeMenu.classList.add('mb-hidden');
+  }
+
+  function showMulti(count: number, host: HTMLElement, pivot: Element): void {
+    const pivotRect = pivot.getBoundingClientRect();
+    const hostRect = host.getBoundingClientRect();
+    el.style.left = `${pivotRect.left - hostRect.left + pivotRect.width / 2}px`;
+    el.style.top  = `${pivotRect.bottom - hostRect.top + 8}px`;
+    el.classList.remove('mb-hidden');
+    // Multi-select mode — hide shape (per-shape changes don't apply to many),
+    // show count chip + lock + delete.
+    shapeBtn.classList.add('mb-hidden');
+    sep.classList.add('mb-hidden');
+    multiLabel.textContent = `${count} selected`;
+    multiLabel.classList.remove('mb-hidden');
+    shapeMenu.classList.add('mb-hidden');
+  }
+
+  function setLocked(locked: boolean): void {
+    lockBtn.classList.toggle('mb-vCtx-lock-on', locked);
   }
 
   function hide(): void {
@@ -747,7 +1133,7 @@ function buildContextTip(handlers: { onDelete: () => void; onShape: (s: NodeShap
 
   function destroy(): void { el.remove(); }
 
-  return { el, showBelow, hide, destroy };
+  return { el, showBelow, showMulti, setLocked, hide, destroy };
 }
 
 // ── Rename overlay ──────────────────────────────────────────────────────────

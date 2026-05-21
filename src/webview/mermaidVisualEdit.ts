@@ -52,6 +52,7 @@ type AnyLine =
   | { kind: 'edge';      edge: EdgeDecl }
   | { kind: 'header';    raw:  string; direction: string }
   | { kind: 'positions'; raw:  string; map: PositionMap }
+  | { kind: 'locks';     raw:  string; ids: string[] }
   | { kind: 'pass';      raw:  string };
 
 export interface Ast {
@@ -101,6 +102,12 @@ export function parseMermaid(source: string): Ast {
     const positions = tryParsePositionsLine(trimmed);
     if (positions) {
       lines.push({ kind: 'positions', raw: trimmed, map: positions });
+      continue;
+    }
+
+    const locks = tryParseLocksLine(trimmed);
+    if (locks) {
+      lines.push({ kind: 'locks', raw: trimmed, ids: locks });
       continue;
     }
 
@@ -276,6 +283,45 @@ export function clearPositions(ast: Ast): void {
   ast.lines = ast.lines.filter(l => l.kind !== 'positions');
 }
 
+// ── Locks sidecar (Phase 4) ─────────────────────────────────────────────────
+
+export function getLocks(ast: Ast): Set<string> | null {
+  for (const line of ast.lines) {
+    if (line.kind === 'locks') return new Set(line.ids);
+  }
+  return null;
+}
+
+export function isLocked(ast: Ast, id: string): boolean {
+  return getLocks(ast)?.has(id) ?? false;
+}
+
+export function setLocks(ast: Ast, ids: Iterable<string>): void {
+  const list = Array.from(new Set(ids)).sort();
+  if (list.length === 0) {
+    ast.lines = ast.lines.filter(l => l.kind !== 'locks');
+    return;
+  }
+  const raw = `%% mb-locks: ${JSON.stringify(list)}`;
+  const idx = ast.lines.findIndex(l => l.kind === 'locks');
+  if (idx >= 0) {
+    ast.lines[idx] = { kind: 'locks', raw, ids: list };
+    return;
+  }
+  // Insert right after positions (if any), else after header.
+  const posIdx = ast.lines.findIndex(l => l.kind === 'positions');
+  const headerIdx = ast.lines.findIndex(l => l.kind === 'header');
+  const at = posIdx >= 0 ? posIdx + 1 : headerIdx + 1;
+  ast.lines.splice(at, 0, { kind: 'locks', raw, ids: list });
+}
+
+export function toggleLock(ast: Ast, id: string): void {
+  const cur = getLocks(ast) ?? new Set<string>();
+  if (cur.has(id)) cur.delete(id);
+  else             cur.add(id);
+  setLocks(ast, cur);
+}
+
 // ── Parsers (internal) ──────────────────────────────────────────────────────
 
 // Order matters — more specific (longer) bracket pairs must come first so a
@@ -290,6 +336,19 @@ const NODE_SHAPES: Array<[NodeShape, RegExp]> = [
   ['round',      /^([A-Za-z][\w-]*)\(\s*"?([^)"]*?)"?\s*\)$/],      // A(Label)
   ['diamond',    /^([A-Za-z][\w-]*)\{\s*"?([^}"]*?)"?\s*\}$/],      // A{Label}
 ];
+
+// `%% mb-locks: ["n1", "n2"]` — phase 4 sidecar listing locked node ids.
+function tryParseLocksLine(trimmed: string): string[] | null {
+  const m = trimmed.match(/^%%\s*mb-locks:\s*(.+)$/);
+  if (!m) return null;
+  try {
+    const arr = JSON.parse(m[1]) as unknown;
+    if (!Array.isArray(arr)) return null;
+    return arr.filter((v): v is string => typeof v === 'string');
+  } catch {
+    return null;
+  }
+}
 
 // `%% mb-positions: { "n1": [120,80], ... }` — our hidden sidecar.
 function tryParsePositionsLine(trimmed: string): PositionMap | null {
@@ -380,6 +439,7 @@ function emitLine(line: AnyLine): string {
   if (line.kind === 'header')    return line.raw;
   if (line.kind === 'pass')      return line.raw;
   if (line.kind === 'positions') return '    ' + line.raw;
+  if (line.kind === 'locks')     return '    ' + line.raw;
   // For node/edge lines: if the parsed `raw` is still attached, emit it
   // verbatim (preserves the user's quoting and inline shape syntax).
   // Mutations clear `raw` to force a canonical re-emit.
