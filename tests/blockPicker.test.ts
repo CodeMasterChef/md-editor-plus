@@ -38,12 +38,12 @@ describe('board block picker entry', () => {
   });
 
   it('has the expected label and aliases', () => {
-    expect(board!.label).toBe('Board');
-    expect(board!.aliases).toEqual(expect.arrayContaining(['kanban', 'tasks', 'project']));
+    expect(board!.label).toBe('Kanban Board');
+    expect(board!.aliases).toEqual(expect.arrayContaining(['board', 'kanban', 'tasks', 'project']));
   });
 
-  it('lives in the "other" section', () => {
-    expect(board!.section).toBe('other');
+  it('lives in the "lists" section', () => {
+    expect(board!.section).toBe('lists');
   });
 
   it('declares an insert handler (not a sub-menu)', () => {
