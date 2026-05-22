@@ -16,7 +16,7 @@ import {
   getLocks, isLocked, toggleLock,
   getStyles, getNodeStyle, setNodeStyle, NodeStyle, StyleMap,
   getEdgeStyles, getEdgeStyle, setEdgeStyle, deleteEdgeByKey, edgeKey,
-  EdgeStyle,
+  EdgeStyle, EdgeCap,
 } from './mermaidVisualEdit';
 
 export type Tool = 'select' | 'pan' | 'rect' | 'pill' | 'circle' | 'diamond' | 'arrow' | 'text' | 'sticky';
@@ -227,6 +227,17 @@ export function createVisualEditor(opts: VisualEditorOptions): VisualEditorHandl
       if (!selectedEdgeKey) return;
       const key = selectedEdgeKey;
       mutate((ast) => { setEdgeStyle(ast, key, partial); });
+    },
+    onFlip: () => {
+      if (!selectedEdgeKey) return;
+      const key = selectedEdgeKey;
+      mutate((ast) => {
+        const cur = getEdgeStyle(ast, key) ?? {};
+        // Default caps if unset: end=arrow, start=none (mermaid default).
+        const start = cur.startCap ?? 'none';
+        const end   = cur.endCap   ?? 'arrow';
+        setEdgeStyle(ast, key, { startCap: end, endCap: start });
+      });
     },
     onDelete: () => {
       if (!selectedEdgeKey) return;
@@ -1787,7 +1798,13 @@ function buildContextTip(handlers: ContextTipHandlers): ContextTipHandle {
   return { el, showBelow, showMulti, setLocked, setStyle, hide, destroy };
 }
 
-// ── Edge context tip (Phase 9) ─────────────────────────────────────────────
+// ── Edge context tip (Phase 9, redesigned) ─────────────────────────────────
+// Two-tier:
+//  Top mini bar (always visible): line-style preview button (opens the
+//    expanded panel), flip, end-cap, start-cap, delete.
+//  Expanded panel (toggled by line button): line type (3), thickness slider,
+//    opacity slider, "No color" button, brand colors (4), all colors (20).
+// Theme-aware (white in light, dark in dark) — uses --bg/--text variables.
 
 interface EdgeTipHandle {
   el:         HTMLElement;
@@ -1799,130 +1816,258 @@ interface EdgeTipHandle {
 
 interface EdgeTipHandlers {
   onStyleChange: (partial: EdgeStyle) => void;
+  onFlip:        () => void;
   onDelete:      () => void;
 }
 
-function buildEdgeContextTip(handlers: EdgeTipHandlers): EdgeTipHandle {
-  const el = document.createElement('div');
-  el.className = 'mb-vEdgeCtx mb-hidden';
-  el.contentEditable = 'false';
+const BRAND_COLORS = ['#ec4899', '#2563eb', '#8b5cf6', '#111827'];
+const ALL_COLORS = [
+  '#fde68a', '#fed7aa', '#fbcfe8', '#bbf7d0',
+  '#bfdbfe', '#e9d5ff', '#fcd34d', '#fb923c',
+  '#fb7185', '#86efac', '#60a5fa', '#a78bfa',
+  '#c2410c', '#7c2d12', '#dc2626', '#166534',
+  '#1e40af', '#6b21a8', '#ffffff', '#9ca3af',
+];
 
-  // Line type buttons: Solid / Dashed / Dotted
-  const typeGroup = document.createElement('div');
-  typeGroup.className = 'mb-vEdgeCtx-group';
+function buildEdgeContextTip(handlers: EdgeTipHandlers): EdgeTipHandle {
+  const wrap = document.createElement('div');
+  wrap.className = 'mb-vEdgeCtx2 mb-hidden';
+  wrap.contentEditable = 'false';
+
+  // ── Top mini bar ─────────────────────────────────────────────────────
+  const topBar = document.createElement('div');
+  topBar.className = 'mb-vEdgeCtx2-top';
+
+  // Line style preview (clicking opens the expanded panel)
+  const lineBtn = document.createElement('button');
+  lineBtn.type = 'button';
+  lineBtn.className = 'mb-vEdgeCtx2-line';
+  lineBtn.setAttribute('aria-label', 'Line style and color');
+  lineBtn.innerHTML = lineGlyph('solid');
+
+  // Flip endpoints
+  const flipBtn = document.createElement('button');
+  flipBtn.type = 'button';
+  flipBtn.className = 'mb-vEdgeCtx2-icon';
+  flipBtn.setAttribute('aria-label', 'Flip endpoints');
+  flipBtn.innerHTML = `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 4v16m-3-3l3 3 3-3M16 20V4m3 3l-3-3-3 3"/></svg>`;
+  flipBtn.addEventListener('mousedown', (e) => { e.preventDefault(); e.stopPropagation(); });
+  flipBtn.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); handlers.onFlip(); });
+
+  // End cap dropdown (right-side)
+  const endCapBtn = makeCapButton('end', (cap) => handlers.onStyleChange({ endCap: cap }));
+  // Start cap dropdown (left-side)
+  const startCapBtn = makeCapButton('start', (cap) => handlers.onStyleChange({ startCap: cap }));
+
+  const sep1 = document.createElement('span');
+  sep1.className = 'mb-vEdgeCtx2-sep';
+  const sep2 = document.createElement('span');
+  sep2.className = 'mb-vEdgeCtx2-sep';
+
+  // Delete
+  const deleteBtn = document.createElement('button');
+  deleteBtn.type = 'button';
+  deleteBtn.className = 'mb-vEdgeCtx2-icon mb-vEdgeCtx2-danger';
+  deleteBtn.setAttribute('aria-label', 'Delete edge');
+  deleteBtn.innerHTML = `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M10 11v6M14 11v6"/></svg>`;
+  deleteBtn.addEventListener('mousedown', (e) => { e.preventDefault(); e.stopPropagation(); });
+  deleteBtn.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); handlers.onDelete(); });
+
+  topBar.append(lineBtn, sep1, flipBtn, endCapBtn.el, startCapBtn.el, sep2, deleteBtn);
+
+  // ── Expanded panel ──────────────────────────────────────────────────
+  const panel = document.createElement('div');
+  panel.className = 'mb-vEdgeCtx2-panel mb-hidden';
+
+  // Line type (3 buttons in a row)
+  const typeRow = document.createElement('div');
+  typeRow.className = 'mb-vEdgeCtx2-types';
   const typeBtns: Record<string, HTMLButtonElement> = {};
   for (const t of ['solid', 'dashed', 'dotted']) {
     const b = document.createElement('button');
     b.type = 'button';
-    b.className = 'mb-vEdgeCtx-btn mb-vEdgeCtx-type';
+    b.className = 'mb-vEdgeCtx2-type';
     b.dataset.type = t;
     b.setAttribute('aria-label', `Line: ${t}`);
-    const dasharray = t === 'dashed' ? '6 4' : t === 'dotted' ? '2 3' : '0';
-    b.innerHTML = `<svg viewBox="0 0 28 12" width="28" height="12"><line x1="2" y1="6" x2="26" y2="6" stroke="currentColor" stroke-width="2" stroke-dasharray="${dasharray}" stroke-linecap="round"/></svg>`;
+    b.innerHTML = lineGlyph(t as 'solid' | 'dashed' | 'dotted', 30);
     b.addEventListener('mousedown', (e) => { e.preventDefault(); e.stopPropagation(); });
     b.addEventListener('click', (e) => {
       e.preventDefault(); e.stopPropagation();
       handlers.onStyleChange({ type: t as 'solid' | 'dashed' | 'dotted' });
     });
     typeBtns[t] = b;
-    typeGroup.appendChild(b);
+    typeRow.appendChild(b);
   }
 
-  // Thickness number input
-  const thicknessInput = document.createElement('input');
-  thicknessInput.type = 'number';
-  thicknessInput.className = 'mb-vCtx-num';
-  thicknessInput.min = '1';
-  thicknessInput.max = '10';
-  thicknessInput.step = '0.5';
-  thicknessInput.value = '1.5';
-  thicknessInput.setAttribute('aria-label', 'Line thickness');
-  thicknessInput.addEventListener('mousedown', (e) => { e.stopPropagation(); });
-  thicknessInput.addEventListener('change', () => {
-    const v = parseFloat(thicknessInput.value);
-    if (Number.isFinite(v)) handlers.onStyleChange({ thickness: v });
-  });
+  // Thickness slider with value label
+  const thicknessSlider = makeLabelledSlider('Thickness', 0.5, 6, 0.5, 1.5, 'px', (v) => handlers.onStyleChange({ thickness: v }));
+  // Opacity slider with value label
+  const opacitySlider = makeLabelledSlider('Opacity', 10, 100, 5, 100, '%', (v) => handlers.onStyleChange({ opacity: v / 100 }));
 
-  // Color picker (reuse makeColorButton helper)
-  const colorBtn = makeColorButton('●', 'Line color', (c) => handlers.onStyleChange({ color: c }));
+  // No color button
+  const noColorBtn = document.createElement('button');
+  noColorBtn.type = 'button';
+  noColorBtn.className = 'mb-vEdgeCtx2-nocolor';
+  noColorBtn.innerHTML = `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><line x1="5" y1="5" x2="19" y2="19"/></svg><span>No color</span>`;
+  noColorBtn.addEventListener('mousedown', (e) => { e.preventDefault(); e.stopPropagation(); });
+  noColorBtn.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); handlers.onStyleChange({ color: 'transparent' }); });
 
-  // Opacity slider
-  const opacityWrap = document.createElement('label');
-  opacityWrap.className = 'mb-vEdgeCtx-opacity';
-  opacityWrap.title = 'Opacity';
-  const opacityInput = document.createElement('input');
-  opacityInput.type = 'range';
-  opacityInput.min = '20';
-  opacityInput.max = '100';
-  opacityInput.step = '10';
-  opacityInput.value = '100';
-  opacityInput.setAttribute('aria-label', 'Line opacity');
-  opacityInput.addEventListener('mousedown', (e) => { e.stopPropagation(); });
-  opacityInput.addEventListener('input', () => {
-    const v = parseInt(opacityInput.value, 10);
-    if (Number.isFinite(v)) handlers.onStyleChange({ opacity: v / 100 });
-  });
-  opacityWrap.appendChild(opacityInput);
+  // Brand colors
+  const brandLabel = document.createElement('div');
+  brandLabel.className = 'mb-vEdgeCtx2-grouplabel';
+  brandLabel.textContent = 'Brand colors';
+  const brandGrid = makeSwatchGrid(BRAND_COLORS, (c) => handlers.onStyleChange({ color: c }));
 
-  // Animated toggle
-  const animBtn = document.createElement('button');
-  animBtn.type = 'button';
-  animBtn.className = 'mb-vEdgeCtx-btn mb-vEdgeCtx-anim';
-  animBtn.setAttribute('aria-label', 'Animate (marching ants)');
-  animBtn.innerHTML = `<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 12h4M10 12h4M18 12h4"/></svg>`;
-  animBtn.addEventListener('mousedown', (e) => { e.preventDefault(); e.stopPropagation(); });
-  animBtn.addEventListener('click', (e) => {
+  // All colors
+  const allLabel = document.createElement('div');
+  allLabel.className = 'mb-vEdgeCtx2-grouplabel';
+  allLabel.textContent = 'All colors';
+  const allGrid = makeSwatchGrid(ALL_COLORS, (c) => handlers.onStyleChange({ color: c }));
+
+  panel.append(typeRow, thicknessSlider.el, opacitySlider.el, noColorBtn, brandLabel, brandGrid, allLabel, allGrid);
+
+  // Toggle panel on lineBtn click
+  lineBtn.addEventListener('mousedown', (e) => { e.preventDefault(); e.stopPropagation(); });
+  lineBtn.addEventListener('click', (e) => {
     e.preventDefault(); e.stopPropagation();
-    const wasOn = animBtn.classList.contains('mb-vEdgeCtx-anim-on');
-    handlers.onStyleChange({ animated: !wasOn });
+    panel.classList.toggle('mb-hidden');
   });
 
-  const sep = document.createElement('span');
-  sep.className = 'mb-vCtx-sep';
-
-  // Delete
-  const deleteBtn = document.createElement('button');
-  deleteBtn.type = 'button';
-  deleteBtn.className = 'mb-vEdgeCtx-btn mb-vCtx-danger';
-  deleteBtn.textContent = '×';
-  deleteBtn.setAttribute('aria-label', 'Delete edge');
-  deleteBtn.addEventListener('mousedown', (e) => { e.preventDefault(); e.stopPropagation(); });
-  deleteBtn.addEventListener('click', (e) => {
-    e.preventDefault(); e.stopPropagation();
-    handlers.onDelete();
-  });
-
-  el.append(typeGroup, thicknessInput, colorBtn.el, opacityWrap, animBtn, sep, deleteBtn);
+  wrap.append(topBar, panel);
 
   function showAt(clientX: number, clientY: number): void {
-    // Position the tip near the click point (above and centered horizontally).
-    // Convert client → host-relative.
-    const host = el.parentElement; // previewPane
+    const host = wrap.parentElement;
     if (host) {
       const hostRect = host.getBoundingClientRect();
-      el.style.left = `${clientX - hostRect.left}px`;
-      el.style.top  = `${clientY - hostRect.top + 16}px`;
+      wrap.style.left = `${clientX - hostRect.left}px`;
+      wrap.style.top  = `${clientY - hostRect.top + 16}px`;
     }
-    el.classList.remove('mb-hidden');
+    wrap.classList.remove('mb-hidden');
   }
 
   function hide(): void {
-    el.classList.add('mb-hidden');
+    wrap.classList.add('mb-hidden');
+    panel.classList.add('mb-hidden');
   }
 
   function setStyle(s: EdgeStyle | null): void {
     const t = s?.type ?? 'solid';
+    lineBtn.innerHTML = lineGlyph(t);
     for (const k of Object.keys(typeBtns)) {
-      typeBtns[k].classList.toggle('mb-vEdgeCtx-type-on', k === t);
+      typeBtns[k].classList.toggle('mb-vEdgeCtx2-type-on', k === t);
     }
-    thicknessInput.value = String(s?.thickness ?? 1.5);
-    opacityInput.value   = String(Math.round((s?.opacity ?? 1) * 100));
-    animBtn.classList.toggle('mb-vEdgeCtx-anim-on', !!s?.animated);
+    thicknessSlider.setValue(s?.thickness ?? 1.5);
+    opacitySlider.setValue(Math.round((s?.opacity ?? 1) * 100));
+    startCapBtn.setCap(s?.startCap ?? 'none');
+    endCapBtn.setCap(s?.endCap ?? 'arrow');
   }
 
-  function destroy(): void { el.remove(); }
+  function destroy(): void { wrap.remove(); }
 
-  return { el, showAt, hide, setStyle, destroy };
+  return { el: wrap, showAt, hide, setStyle, destroy };
+}
+
+function lineGlyph(type: 'solid' | 'dashed' | 'dotted', width = 26): string {
+  const dasharray = type === 'dashed' ? '6 4' : type === 'dotted' ? '2 3' : '0';
+  return `<svg viewBox="0 0 ${width + 4} 12" width="${width + 4}" height="12"><line x1="2" y1="6" x2="${width + 2}" y2="6" stroke="currentColor" stroke-width="2.5" stroke-dasharray="${dasharray}" stroke-linecap="round"/></svg>`;
+}
+
+function makeCapButton(which: 'start' | 'end', onPick: (cap: EdgeCap) => void): { el: HTMLElement; setCap: (c: EdgeCap) => void } {
+  const wrap = document.createElement('div');
+  wrap.className = 'mb-vEdgeCtx2-cap';
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'mb-vEdgeCtx2-icon';
+  btn.setAttribute('aria-label', which === 'start' ? 'Start cap' : 'End cap');
+  btn.innerHTML = capGlyph(which === 'end' ? 'arrow' : 'none', which);
+  const pop = document.createElement('div');
+  pop.className = 'mb-vEdgeCtx2-cappop mb-hidden';
+  const opts: Array<[EdgeCap, string]> = [['none', 'None'], ['arrow', 'Arrow'], ['circle', 'Circle']];
+  for (const [cap, label] of opts) {
+    const item = document.createElement('button');
+    item.type = 'button';
+    item.className = 'mb-vEdgeCtx2-capitem';
+    item.dataset.cap = cap;
+    item.innerHTML = `${capGlyph(cap, which)}<span>${label}</span>`;
+    item.addEventListener('mousedown', (e) => { e.preventDefault(); e.stopPropagation(); });
+    item.addEventListener('click', (e) => {
+      e.preventDefault(); e.stopPropagation();
+      pop.classList.add('mb-hidden');
+      onPick(cap);
+    });
+    pop.appendChild(item);
+  }
+  btn.addEventListener('mousedown', (e) => { e.preventDefault(); e.stopPropagation(); });
+  btn.addEventListener('click', (e) => {
+    e.preventDefault(); e.stopPropagation();
+    pop.classList.toggle('mb-hidden');
+  });
+  wrap.append(btn, pop);
+  return {
+    el: wrap,
+    setCap(c) { btn.innerHTML = capGlyph(c, which); },
+  };
+}
+
+function capGlyph(cap: EdgeCap, which: 'start' | 'end'): string {
+  // SVG glyph for a horizontal line with a cap on the given end.
+  const path = cap === 'arrow'
+    ? (which === 'end' ? `<line x1="2" y1="10" x2="14" y2="10" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="M14 10 L10 6 M14 10 L10 14" stroke="currentColor" stroke-width="2" stroke-linecap="round" fill="none"/>`
+                       : `<line x1="6" y1="10" x2="18" y2="10" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="M6 10 L10 6 M6 10 L10 14" stroke="currentColor" stroke-width="2" stroke-linecap="round" fill="none"/>`)
+    : cap === 'circle'
+    ? (which === 'end' ? `<line x1="2" y1="10" x2="13" y2="10" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><circle cx="16" cy="10" r="2.5" fill="currentColor"/>`
+                       : `<circle cx="4" cy="10" r="2.5" fill="currentColor"/><line x1="7" y1="10" x2="18" y2="10" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>`)
+    : /* none */         `<line x1="2" y1="10" x2="18" y2="10" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>`;
+  return `<svg viewBox="0 0 20 20" width="18" height="18" fill="none">${path}</svg>`;
+}
+
+function makeLabelledSlider(label: string, min: number, max: number, step: number, initial: number, suffix: string, onChange: (v: number) => void): { el: HTMLElement; setValue: (v: number) => void } {
+  const wrap = document.createElement('div');
+  wrap.className = 'mb-vEdgeCtx2-slider';
+  const inputEl = document.createElement('input');
+  inputEl.type = 'range';
+  inputEl.min  = String(min);
+  inputEl.max  = String(max);
+  inputEl.step = String(step);
+  inputEl.value = String(initial);
+  const row = document.createElement('div');
+  row.className = 'mb-vEdgeCtx2-sliderlabel';
+  const lab = document.createElement('span');
+  lab.textContent = label;
+  const val = document.createElement('span');
+  val.className = 'mb-vEdgeCtx2-sliderval';
+  val.textContent = `${initial}${suffix}`;
+  row.append(lab, val);
+  inputEl.addEventListener('mousedown', (e) => { e.stopPropagation(); });
+  inputEl.addEventListener('input', () => {
+    const v = parseFloat(inputEl.value);
+    if (Number.isFinite(v)) {
+      val.textContent = `${v}${suffix}`;
+      onChange(v);
+    }
+  });
+  wrap.append(inputEl, row);
+  return {
+    el: wrap,
+    setValue(v) { inputEl.value = String(v); val.textContent = `${v}${suffix}`; },
+  };
+}
+
+function makeSwatchGrid(colors: string[], onPick: (c: string) => void): HTMLElement {
+  const grid = document.createElement('div');
+  grid.className = 'mb-vEdgeCtx2-swatches';
+  for (const c of colors) {
+    const s = document.createElement('button');
+    s.type = 'button';
+    s.className = 'mb-vEdgeCtx2-swatch';
+    s.style.background = c;
+    s.dataset.color = c;
+    s.setAttribute('aria-label', `Color ${c}`);
+    s.addEventListener('mousedown', (e) => { e.preventDefault(); e.stopPropagation(); });
+    s.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); onPick(c); });
+    grid.appendChild(s);
+  }
+  return grid;
 }
 
 // ── Rename overlay ──────────────────────────────────────────────────────────
@@ -2285,6 +2430,31 @@ function applyEdgeStyle(p: SVGPathElement, s: EdgeStyle): void {
   else if (s.type === 'solid')  p.style.setProperty('stroke-dasharray', '0',   'important');
 
   p.classList.toggle('mb-vEdge-animated', !!s.animated && s.type !== 'solid');
+
+  // Endpoint caps via mermaid's built-in markers (overridden by id pattern).
+  if (s.startCap !== undefined) {
+    p.setAttribute('marker-start', markerUrlFor(p, 'start', s.startCap) ?? '');
+  }
+  if (s.endCap !== undefined) {
+    p.setAttribute('marker-end',   markerUrlFor(p, 'end',   s.endCap)   ?? '');
+  }
+}
+
+/** Compose a marker url() reference using the diagram-prefix that mermaid
+    inserted on its <marker id> elements. Returns null for 'none' (caller
+    sets marker-* to empty). */
+function markerUrlFor(p: SVGPathElement, which: 'start' | 'end', cap: EdgeCap): string | null {
+  if (cap === 'none') return null;
+  // Existing marker-end on the path looks like:
+  //   url(#mmd-1779388518000_flowchart-v2-pointEnd)
+  // We extract the prefix before "pointEnd" / "circleEnd" / etc.
+  const cur = p.getAttribute('marker-end') ?? p.getAttribute('marker-start') ?? '';
+  const prefixMatch = cur.match(/url\(#(.+?)(?:point|circle|cross)(?:Start|End)\b/);
+  const prefix = prefixMatch?.[1] ?? '';
+  const kind = cap === 'arrow' ? 'point' : cap === 'circle' ? 'circle' : '';
+  if (!kind) return null;
+  const suffix = which === 'start' ? 'Start' : 'End';
+  return `url(#${prefix}${kind}${suffix})`;
 }
 
 function applyStyleToNode(g: SVGGElement, s: NodeStyle): void {
