@@ -4060,6 +4060,79 @@ html.theme-dark .ProseMirror .mb-vTb-grid.mb-vTb-active {
   border-color: var(--link);
 }
 
+/* ===========================================================================
+   Phase 12: Bottom toolbar v2 — matches context-tip white design,
+   bolder phosphor-style icons.
+   =========================================================================== */
+.ProseMirror .mb-vTb.mb-vTb2 {
+  bottom: 18px;
+  padding: 6px 8px;
+  gap: 2px;
+  background: var(--bg);
+  color: var(--text-primary);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.10);
+  font: 500 13px var(--font-body);
+}
+.ProseMirror .mb-vTb2 .mb-vTb-btn {
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  color: var(--text-primary);
+}
+.ProseMirror .mb-vTb2 .mb-vTb-btn svg {
+  width: 20px;
+  height: 20px;
+}
+.ProseMirror .mb-vTb2 .mb-vTb-btn:hover {
+  background: var(--block-hover);
+  color: var(--text-primary);
+}
+.ProseMirror .mb-vTb2 .mb-vTb-btn.mb-vTb-active {
+  background: var(--callout-note-bg);
+  color: var(--callout-note-accent);
+}
+.ProseMirror .mb-vTb2 .mb-vTb-sep {
+  width: 1px;
+  height: 22px;
+  background: var(--border);
+  margin: 0 4px;
+}
+
+/* Shapes popover above the toolbar — same white card as the context tip
+   popovers, in a 4-icon row to keep the bottom toolbar compact. */
+.ProseMirror .mb-vTb2 .mb-vTb-shapespop {
+  bottom: calc(100% + 8px);
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 6px;
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.14);
+  display: flex;
+  gap: 4px;
+  z-index: 31;
+}
+.ProseMirror .mb-vTb2 .mb-vTb-shapespop-item {
+  width: 40px;
+  height: 40px;
+  border-radius: 8px;
+}
+.ProseMirror .mb-vTb2 .mb-vTb-shapespop-item svg {
+  width: 22px;
+  height: 22px;
+}
+.ProseMirror .mb-vTb2 .mb-vTb-reset.mb-vTb-disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.ProseMirror .mb-vTb2 .mb-vTb-grid.mb-vTb-active {
+  background: var(--callout-note-bg);
+  color: var(--callout-note-accent);
+}
+
 /* Resize handles around a single-selected, unlocked node. */
 .ProseMirror .mb-vResize {
   position: absolute;

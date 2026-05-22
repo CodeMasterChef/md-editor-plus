@@ -50,20 +50,24 @@ const SHAPE_FOR_TOOL: Record<Exclude<Tool, 'select' | 'arrow' | 'sticky' | 'pan'
 };
 
 // SVG icons used by the toolbar. Stroke-based, currentColor — tint via CSS.
+// Phosphor-bold-styled tool icons. Stroke 2.2 + linecap round to match the
+// thicker, more deliberate Phosphor look. Each glyph is sized for the bigger
+// (32px) tool buttons so they don't look skinny inside the chip.
+const TOOL_STROKE = `fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"`;
 const ICONS: Record<string, string> = {
-  select:  `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 3v18l4-4h12L5 3z"/></svg>`,
-  pan:     `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 11V6a2 2 0 0 0-4 0v5"/><path d="M14 10V4a2 2 0 0 0-4 0v6"/><path d="M10 10.5V6a2 2 0 0 0-4 0v8"/><path d="M18 8a2 2 0 1 1 4 0v6a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.9-5.99-3.5l-3.4-5.9a2 2 0 1 1 3.4-2l1.99 3.4"/></svg>`,
-  rect:    `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="6" width="16" height="12" rx="2"/></svg>`,
-  pill:    `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="8" width="18" height="8" rx="4"/></svg>`,
-  circle:  `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="7"/></svg>`,
-  diamond: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3l9 9-9 9-9-9 9-9z"/></svg>`,
-  arrow:   `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14m-4-4l4 4-4 4"/></svg>`,
-  text:    `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7h16M12 7v13"/></svg>`,
-  sticky:  `<svg viewBox="0 0 24 24" fill="#fef6a9" stroke="#b89d1f" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M16 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5" fill="#f0e07a"/></svg>`,
-  // "Shapes" composite button — represents the shapes group in a single icon.
-  shapes:  `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="13" width="8" height="8" rx="1"/><circle cx="17" cy="17" r="4"/><path d="M9 3l5 8h-10z"/></svg>`,
-  reset:   `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v6h6"/></svg>`,
-  grid:    `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>`,
+  select:  `<svg viewBox="0 0 24 24" ${TOOL_STROKE} fill="currentColor"><path d="M5.5 3.5 5.5 19.7 9.4 16 14.8 22 17.3 20.5 13.2 14.5 18.5 14.5z" fill="currentColor" stroke="currentColor"/></svg>`,
+  pan:     `<svg viewBox="0 0 24 24" ${TOOL_STROKE}><path d="M18 11V6a2 2 0 0 0-4 0v5"/><path d="M14 10V4a2 2 0 0 0-4 0v6"/><path d="M10 10.5V6a2 2 0 0 0-4 0v8"/><path d="M18 8a2 2 0 1 1 4 0v6a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.9-5.99-3.5l-3.4-5.9a2 2 0 1 1 3.4-2l1.99 3.4"/></svg>`,
+  rect:    `<svg viewBox="0 0 24 24" ${TOOL_STROKE}><rect x="4" y="6" width="16" height="12" rx="2"/></svg>`,
+  pill:    `<svg viewBox="0 0 24 24" ${TOOL_STROKE}><rect x="3" y="8" width="18" height="8" rx="4"/></svg>`,
+  circle:  `<svg viewBox="0 0 24 24" ${TOOL_STROKE}><circle cx="12" cy="12" r="7"/></svg>`,
+  diamond: `<svg viewBox="0 0 24 24" ${TOOL_STROKE}><path d="M12 3l9 9-9 9-9-9 9-9z"/></svg>`,
+  arrow:   `<svg viewBox="0 0 24 24" ${TOOL_STROKE}><path d="M4 12h14"/><path d="M14 7l5 5-5 5"/></svg>`,
+  text:    `<svg viewBox="0 0 24 24" ${TOOL_STROKE}><path d="M5 6h14"/><path d="M12 6v14"/></svg>`,
+  sticky:  `<svg viewBox="0 0 24 24" fill="#fef6a9" stroke="#b89d1f" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M16 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5" fill="#f0e07a"/></svg>`,
+  // "Shapes" composite button — a square + circle + triangle in one glyph.
+  shapes:  `<svg viewBox="0 0 24 24" ${TOOL_STROKE}><rect x="3" y="13" width="8" height="8" rx="1"/><circle cx="17" cy="17" r="4"/><path d="M9 3l5 8h-10z"/></svg>`,
+  reset:   `<svg viewBox="0 0 24 24" ${TOOL_STROKE}><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v6h6"/></svg>`,
+  grid:    `<svg viewBox="0 0 24 24" ${TOOL_STROKE}><rect x="3.5" y="3.5" width="7" height="7" rx="1"/><rect x="13.5" y="3.5" width="7" height="7" rx="1"/><rect x="3.5" y="13.5" width="7" height="7" rx="1"/><rect x="13.5" y="13.5" width="7" height="7" rx="1"/></svg>`,
 };
 
 const TOOL_HOTKEYS: Record<string, Tool> = {
@@ -209,7 +213,13 @@ export function createVisualEditor(opts: VisualEditorOptions): VisualEditorHandl
     },
     onShape: (shape) => {
       if (!selectedId) return;
-      mutate((ast) => changeNodeShape(ast, selectedId!, shape));
+      mutate((ast) => {
+        // Pin current positions first so the shape swap doesn't let mermaid
+        // re-flow the whole diagram (some shapes have different default
+        // dimensions, which moves every other node).
+        pinAllRenderedPositions(ast, opts.previewPane);
+        changeNodeShape(ast, selectedId!, shape);
+      });
     },
     onToggleLock: () => {
       const targetIds = Array.from(selectedIds);
@@ -434,7 +444,12 @@ export function createVisualEditor(opts: VisualEditorOptions): VisualEditorHandl
         const to   = targetNode.id;
         pendingFromId = null;
         pendingPin.classList.add('mb-hidden');
-        mutate((ast) => { addEdge(ast, from, to); });
+        mutate((ast) => {
+          // Snapshot all rendered node positions before adding the edge so
+          // mermaid's auto-layout can't reshuffle the diagram on re-render.
+          pinAllRenderedPositions(ast, opts.previewPane);
+          addEdge(ast, from, to);
+        });
         toolbar.setActive('select');
         activeTool = 'select';
       }
@@ -1070,7 +1085,12 @@ export function createVisualEditor(opts: VisualEditorOptions): VisualEditorHandl
       if (targetId && targetId !== edgeDraft.fromId) {
         const fromId = edgeDraft.fromId;
         const toId   = targetId;
-        mutate((ast) => { addEdge(ast, fromId, toId); });
+        mutate((ast) => {
+          // Same as the arrow-tool path: pin everything first so mermaid
+          // can't re-layout the diagram when the new edge changes structure.
+          pinAllRenderedPositions(ast, opts.previewPane);
+          addEdge(ast, fromId, toId);
+        });
       }
       if (edgeDraft.pathEl) edgeDraft.pathEl.remove();
       edgeDraft = null;
@@ -1434,7 +1454,7 @@ interface ToolbarHandlers {
 
 function buildToolbar({ onPick, onReset, onToggleGrid }: ToolbarHandlers): ToolbarHandle {
   const el = document.createElement('div');
-  el.className = 'mb-vTb';
+  el.className = 'mb-vTb mb-vTb2';
   el.contentEditable = 'false';
 
   // The four shape tools collapse into a single "Shapes" button with a
@@ -2610,6 +2630,27 @@ function clampScale(s: number): number {
 // ── Positions overlay (Phase 2) ────────────────────────────────────────────
 
 /** Mermaid puts `transform="translate(X, Y)"` on every g.node. Parse it. */
+// Snapshot every currently-rendered node's position into mb-positions, but
+// only for nodes that aren't already pinned. This is the anchor we set just
+// before mutations that would otherwise let mermaid re-run its auto-layout
+// (most importantly: adding an edge), so existing nodes stay where they are.
+function pinAllRenderedPositions(ast: Ast, host: HTMLElement): void {
+  const existing = getPositions(ast) ?? {};
+  const snapshot: PositionMap = { ...existing };
+  const allNodes = host.querySelectorAll<SVGGElement>('g.node');
+  let added = 0;
+  for (const n of Array.from(allNodes)) {
+    const id = extractMermaidId(n);
+    if (!id || existing[id]) continue;
+    const t = readNodeTranslate(n);
+    if (t) {
+      snapshot[id] = [t.x, t.y];
+      added++;
+    }
+  }
+  if (added > 0) setAllPositions(ast, snapshot);
+}
+
 function readNodeTranslate(g: SVGGElement): { x: number; y: number } | null {
   const t = g.getAttribute('transform') ?? '';
   const m = t.match(/translate\(\s*(-?[\d.]+)\s*[, ]\s*(-?[\d.]+)\s*\)/);
