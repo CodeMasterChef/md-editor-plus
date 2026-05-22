@@ -176,6 +176,27 @@ export function createVisualEditor(opts: VisualEditorOptions): VisualEditorHandl
   selectionRing.className = 'mb-vSel mb-hidden';
   // Additional rings for multi-selected nodes — pooled.
   const extraRings: HTMLDivElement[] = [];
+  // Resize handles overlay — 8 grippers around the single-selected node.
+  // Hidden for multi-select, edge-select, locked nodes, or no selection.
+  const resizeOverlay = buildResizeOverlay({
+    onResize: (id, sx, sy) => {
+      // Live update while dragging — keeps it snappy by skipping the source
+      // mutation. The DOM transform is the source of truth until release.
+      const el = findNodeElementById(id, opts.previewPane) as SVGGElement | null;
+      if (!el) return;
+      el.style.setProperty('transform', `scale(${sx}, ${sy})`, 'important');
+      el.style.setProperty('transform-box', 'fill-box', 'important');
+      el.style.setProperty('transform-origin', 'center', 'important');
+      // Keep the selection ring + handles glued to the visually-scaled node.
+      positionRingAround(selectionRing, el, opts.previewPane);
+      resizeOverlay.positionAround(el, opts.previewPane);
+      // Edges anchored on this node need to track its new visual extent.
+      recomputeEdgesTouching(id, opts.previewPane);
+    },
+    onResizeEnd: (id, sx, sy) => {
+      mutate((ast) => { setNodeStyle(ast, id, { scale: [sx, sy] }); });
+    },
+  });
   const contextTip = buildContextTip({
     onDelete: () => {
       const targetIds = Array.from(selectedIds);
@@ -313,6 +334,7 @@ export function createVisualEditor(opts: VisualEditorOptions): VisualEditorHandl
   // hook (which already trusts preview-pane mutations) doesn't fight us.
   opts.previewPane.appendChild(toolbar.el);
   opts.previewPane.appendChild(selectionRing);
+  opts.previewPane.appendChild(resizeOverlay.el);
   opts.previewPane.appendChild(connectionLayer);
   opts.previewPane.appendChild(targetHooksLayer);
   opts.previewPane.appendChild(marqueeEl);
@@ -330,6 +352,12 @@ export function createVisualEditor(opts: VisualEditorOptions): VisualEditorHandl
       suppressNextClick = false;
       e.stopPropagation();
       e.preventDefault();
+      return;
+    }
+
+    // Clicks on our own overlay chrome (resize handles, edge tip, context
+    // tip, etc.) shouldn't fall through to selection/edge hit-testing.
+    if ((e.target as Element).closest?.('.mb-vResize, .mb-vCtx, .mb-vEdgeCtx2, .mb-vTb, .mb-vConn, .mb-vZoom')) {
       return;
     }
 
@@ -813,7 +841,7 @@ export function createVisualEditor(opts: VisualEditorOptions): VisualEditorHandl
     // Pan tool, space-drag, or middle-click → pan the viewport.
     if (activeTool === 'pan' || spaceHeld) {
       // Don't pan if click landed on our own UI overlays (toolbar, etc.).
-      const inOverlay = (e.target as Element).closest('.mb-vTb, .mb-vCtx, .mb-vZoom, .mb-snackbar, .mb-vRename, .mb-vPin');
+      const inOverlay = (e.target as Element).closest('.mb-vTb, .mb-vCtx, .mb-vZoom, .mb-snackbar, .mb-vRename, .mb-vPin, .mb-vResize');
       if (inOverlay) return;
       pan = {
         startX:   e.clientX,
@@ -852,7 +880,7 @@ export function createVisualEditor(opts: VisualEditorOptions): VisualEditorHandl
       // Empty canvas mousedown with Select tool → start marquee.
       // (Don't start marquee for clicks inside our own UI overlays — those have
       //  their own pointer handlers and shouldn't trigger selection drag.)
-      const inOverlay = (e.target as Element).closest('.mb-vTb, .mb-vCtx, .mb-vConn, .mb-snackbar, .mb-vRename, .mb-vPin, .mb-svg-host svg');
+      const inOverlay = (e.target as Element).closest('.mb-vTb, .mb-vCtx, .mb-vConn, .mb-vResize, .mb-snackbar, .mb-vRename, .mb-vPin, .mb-svg-host svg');
       if (!inOverlay) {
         marquee = { x1: e.clientX, y1: e.clientY, x2: e.clientX, y2: e.clientY, additive: e.shiftKey };
       }
@@ -1189,6 +1217,7 @@ export function createVisualEditor(opts: VisualEditorOptions): VisualEditorHandl
       for (const r of extraRings) r.classList.add('mb-hidden');
       contextTip.hide();
       hideConnectionPoints();
+      resizeOverlay.hide();
       return;
     }
 
@@ -1197,6 +1226,7 @@ export function createVisualEditor(opts: VisualEditorOptions): VisualEditorHandl
       selectionRing.classList.add('mb-hidden');
       contextTip.hide();
       hideConnectionPoints();
+      resizeOverlay.hide();
       return;
     }
     positionRingAround(selectionRing, pivotEl, opts.previewPane);
@@ -1223,13 +1253,23 @@ export function createVisualEditor(opts: VisualEditorOptions): VisualEditorHandl
     if (ids.length === 1) {
       contextTip.showBelow(pivotEl, opts.previewPane);
       const ast = parseMermaid(opts.getSource());
-      contextTip.setLocked(isLocked(ast, ids[0]));
+      const locked = isLocked(ast, ids[0]);
+      contextTip.setLocked(locked);
       contextTip.setStyle(getNodeStyle(ast, ids[0]));
       showConnectionPoints(pivotEl);
+      // Resize handles: only when unlocked. Seed with the persisted scale so
+      // dragging continues from where the last edit left off.
+      if (locked) {
+        resizeOverlay.hide();
+      } else {
+        const persisted = getNodeStyle(ast, ids[0])?.scale ?? [1, 1];
+        resizeOverlay.attach(ids[0], pivotEl, opts.previewPane, persisted);
+      }
     } else {
       contextTip.showMulti(ids.length, opts.previewPane, pivotEl);
       contextTip.setStyle(null);
       hideConnectionPoints();
+      resizeOverlay.hide();
     }
 
     // Padlock badges over locked selected nodes.
@@ -1592,6 +1632,7 @@ function buildContextTip(handlers: ContextTipHandlers): ContextTipHandle {
   const shapeBtn = document.createElement('button');
   shapeBtn.type = 'button';
   shapeBtn.className = 'mb-vCtx-btn';
+  shapeBtn.title = 'Change shape';
   shapeBtn.textContent = 'Shape ▾';
 
   const shapeMenu = document.createElement('div');
@@ -1606,6 +1647,7 @@ function buildContextTip(handlers: ContextTipHandlers): ContextTipHandle {
     const opt = document.createElement('button');
     opt.type = 'button';
     opt.className = 'mb-vCtx-menu-item';
+    opt.title = label;
     opt.textContent = label;
     opt.addEventListener('mousedown', (e) => { e.preventDefault(); e.stopPropagation(); });
     opt.addEventListener('click', (e) => {
@@ -1635,6 +1677,7 @@ function buildContextTip(handlers: ContextTipHandlers): ContextTipHandle {
   fontInput.step = '1';
   fontInput.value = '14';
   fontInput.setAttribute('aria-label', 'Font size');
+  fontInput.title = 'Font size';
   fontInput.addEventListener('mousedown', (e) => { e.stopPropagation(); });
   fontInput.addEventListener('change', () => {
     const v = parseInt(fontInput.value, 10);
@@ -1647,6 +1690,7 @@ function buildContextTip(handlers: ContextTipHandlers): ContextTipHandle {
   boldBtn.className = 'mb-vCtx-btn mb-vCtx-bold';
   boldBtn.textContent = 'B';
   boldBtn.setAttribute('aria-label', 'Bold');
+  boldBtn.title = 'Bold';
   boldBtn.addEventListener('mousedown', (e) => { e.preventDefault(); e.stopPropagation(); });
   boldBtn.addEventListener('click', (e) => {
     e.preventDefault(); e.stopPropagation();
@@ -1661,11 +1705,17 @@ function buildContextTip(handlers: ContextTipHandlers): ContextTipHandle {
   // ── Fill color ────────────────────────────────────────────────────────
   const fillBtn      = makeColorButton('●', 'Fill color',   (c) => handlers.onStyle({ fill: c }));
 
+  // ── Stroke style (thickness + opacity) ────────────────────────────────
+  // Matches the edge tip's line panel — sliders for border width and overall
+  // node opacity. Opens its own popover beside the color buttons.
+  const styleCtl = makeNodeStyleButton((partial) => handlers.onStyle(partial));
+
   // ── Duplicate ─────────────────────────────────────────────────────────
   const dupBtn = document.createElement('button');
   dupBtn.type = 'button';
   dupBtn.className = 'mb-vCtx-btn mb-vCtx-dup';
   dupBtn.setAttribute('aria-label', 'Duplicate');
+  dupBtn.title = 'Duplicate';
   dupBtn.innerHTML = `<svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>`;
   dupBtn.addEventListener('mousedown', (e) => { e.preventDefault(); e.stopPropagation(); });
   dupBtn.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); handlers.onDuplicate(); });
@@ -1681,6 +1731,7 @@ function buildContextTip(handlers: ContextTipHandlers): ContextTipHandle {
   moreBtn.className = 'mb-vCtx-btn mb-vCtx-more';
   moreBtn.textContent = '⋯';
   moreBtn.setAttribute('aria-label', 'More actions');
+  moreBtn.title = 'More actions (align / distribute)';
   moreBtn.addEventListener('mousedown', (e) => { e.preventDefault(); e.stopPropagation(); });
   const morePop = document.createElement('div');
   morePop.className = 'mb-vCtx-morepop mb-hidden';
@@ -1698,6 +1749,7 @@ function buildContextTip(handlers: ContextTipHandlers): ContextTipHandle {
     const it = document.createElement('button');
     it.type = 'button';
     it.className = 'mb-vCtx-menu-item';
+    it.title = label;
     it.textContent = label;
     it.addEventListener('mousedown', (e) => { e.preventDefault(); e.stopPropagation(); });
     it.addEventListener('click', (e) => {
@@ -1717,6 +1769,7 @@ function buildContextTip(handlers: ContextTipHandlers): ContextTipHandle {
   lockBtn.type = 'button';
   lockBtn.className = 'mb-vCtx-btn mb-vCtx-lock';
   lockBtn.setAttribute('aria-label', 'Lock node');
+  lockBtn.title = 'Lock / unlock';
   lockBtn.innerHTML = `<svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>`;
   lockBtn.addEventListener('mousedown', (e) => { e.preventDefault(); e.stopPropagation(); });
   lockBtn.addEventListener('click', (e) => {
@@ -1733,6 +1786,7 @@ function buildContextTip(handlers: ContextTipHandlers): ContextTipHandle {
   deleteBtn.className = 'mb-vCtx-btn mb-vCtx-danger';
   deleteBtn.textContent = '×';
   deleteBtn.setAttribute('aria-label', 'Delete node');
+  deleteBtn.title = 'Delete';
   deleteBtn.addEventListener('mousedown', (e) => { e.preventDefault(); e.stopPropagation(); });
   deleteBtn.addEventListener('click', (e) => {
     e.preventDefault();
@@ -1743,7 +1797,7 @@ function buildContextTip(handlers: ContextTipHandlers): ContextTipHandle {
   el.append(
     shapeBtn, shapeMenu, sep,
     fontInput, boldBtn,
-    textColorBtn.el, borderBtn.el, fillBtn.el,
+    textColorBtn.el, borderBtn.el, fillBtn.el, styleCtl.el,
     dupBtn, moreWrap, styleSep,
     lockBtn, sep2, deleteBtn,
   );
@@ -1809,6 +1863,7 @@ function buildContextTip(handlers: ContextTipHandlers): ContextTipHandle {
   function setStyle(s: NodeStyle | null): void {
     fontInput.value = String(s?.fontSize ?? 14);
     boldBtn.classList.toggle('mb-vCtx-bold-on', !!s?.bold);
+    styleCtl.setState(s?.borderWidth ?? 1, s?.opacity ?? 1);
   }
 
   function hide(): void {
@@ -2417,6 +2472,148 @@ function positionRingAround(ring: HTMLElement, node: Element, host: HTMLElement)
   ring.style.height = `${nodeRect.height + 8}px`;
 }
 
+// ── Resize handles ────────────────────────────────────────────────────────
+// Eight grippers around the single-selected node. Dragging a handle scales
+// the node via CSS transform (anchored at center, so opposite corners move
+// symmetrically — simpler than re-anchoring + translating). The new scale
+// commits on mouseup; live edits during the drag stay in the DOM.
+
+type ResizePos = 'nw' | 'n' | 'ne' | 'e' | 'se' | 's' | 'sw' | 'w';
+
+interface ResizeOverlayHandle {
+  el:             HTMLElement;
+  attach:         (id: string, node: Element, host: HTMLElement, initialScale: [number, number]) => void;
+  positionAround: (node: Element, host: HTMLElement) => void;
+  hide:           () => void;
+}
+
+function buildResizeOverlay(handlers: {
+  onResize:    (id: string, sx: number, sy: number) => void;
+  onResizeEnd: (id: string, sx: number, sy: number) => void;
+}): ResizeOverlayHandle {
+  const el = document.createElement('div');
+  el.className = 'mb-vResize mb-hidden';
+  const positions: ResizePos[] = ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w'];
+  const handleByPos = new Map<ResizePos, HTMLDivElement>();
+  for (const pos of positions) {
+    const h = document.createElement('div');
+    h.className = 'mb-vResize-handle';
+    h.dataset.pos = pos;
+    h.title = 'Drag to resize';
+    el.appendChild(h);
+    handleByPos.set(pos, h);
+  }
+
+  let currentId: string | null = null;
+  let currentNode: Element | null = null;
+  let currentHost: HTMLElement | null = null;
+  let baseScale: [number, number] = [1, 1];
+
+  function positionHandles(): void {
+    if (!currentNode || !currentHost) return;
+    const r = currentNode.getBoundingClientRect();
+    const h = currentHost.getBoundingClientRect();
+    const x = r.left - h.left;
+    const y = r.top  - h.top;
+    const w = r.width;
+    const ht = r.height;
+    el.style.left   = `${x}px`;
+    el.style.top    = `${y}px`;
+    el.style.width  = `${w}px`;
+    el.style.height = `${ht}px`;
+    const setPos = (pos: ResizePos, cx: number, cy: number): void => {
+      const handle = handleByPos.get(pos)!;
+      handle.style.left = `${cx}px`;
+      handle.style.top  = `${cy}px`;
+    };
+    setPos('nw', 0,     0);
+    setPos('n',  w / 2, 0);
+    setPos('ne', w,     0);
+    setPos('e',  w,     ht / 2);
+    setPos('se', w,     ht);
+    setPos('s',  w / 2, ht);
+    setPos('sw', 0,     ht);
+    setPos('w',  0,     ht / 2);
+  }
+
+  // Pointer drag — anchored at node center, so distance to cursor controls
+  // the new half-extent. We multiply by 2 to recover the full size.
+  el.addEventListener('mousedown', (downEv) => {
+    const target = (downEv.target as HTMLElement).closest('.mb-vResize-handle') as HTMLDivElement | null;
+    if (!target || !currentId || !currentNode) return;
+    downEv.preventDefault();
+    downEv.stopPropagation();
+    const pos = target.dataset.pos as ResizePos;
+    const startRect = currentNode.getBoundingClientRect();
+    const startW = startRect.width;
+    const startH = startRect.height;
+    const cx = startRect.left + startW / 2;
+    const cy = startRect.top  + startH / 2;
+    // Origin scale (before this drag) — needed so a 2× node scaled to 3×
+    // produces sx = 3 / 1 (relative to mermaid's layout), not 3 / 2.
+    const baseSx = baseScale[0];
+    const baseSy = baseScale[1];
+    const unscaledW = startW / baseSx;
+    const unscaledH = startH / baseSy;
+    let lastSx = baseSx, lastSy = baseSy;
+
+    const move = (e: MouseEvent): void => {
+      // Distance from center to cursor → half new extent → full new size.
+      const dx = Math.abs(e.clientX - cx);
+      const dy = Math.abs(e.clientY - cy);
+      let newW = startW;
+      let newH = startH;
+      if (pos.includes('e') || pos.includes('w')) newW = Math.max(20, dx * 2);
+      if (pos.includes('n') || pos.includes('s')) newH = Math.max(20, dy * 2);
+      // Shift constrains to a uniform scale (aspect-ratio preserved).
+      if (e.shiftKey) {
+        const k = Math.max(newW / startW, newH / startH);
+        newW = startW * k;
+        newH = startH * k;
+      }
+      lastSx = clampScale(newW / unscaledW);
+      lastSy = clampScale(newH / unscaledH);
+      handlers.onResize(currentId!, lastSx, lastSy);
+    };
+    const up = (): void => {
+      document.removeEventListener('mousemove', move);
+      document.removeEventListener('mouseup',   up);
+      handlers.onResizeEnd(currentId!, lastSx, lastSy);
+      baseScale = [lastSx, lastSy];
+    };
+    document.addEventListener('mousemove', move);
+    document.addEventListener('mouseup',   up);
+  });
+
+  return {
+    el,
+    attach(id, node, host, initialScale) {
+      currentId   = id;
+      currentNode = node;
+      currentHost = host;
+      baseScale   = initialScale;
+      positionHandles();
+      el.classList.remove('mb-hidden');
+    },
+    positionAround(node, host) {
+      currentNode = node;
+      currentHost = host;
+      positionHandles();
+    },
+    hide() {
+      currentId = null;
+      el.classList.add('mb-hidden');
+    },
+  };
+}
+
+function clampScale(s: number): number {
+  // Min 0.25× so the node doesn't collapse below a usable size; max 5× so
+  // someone slipping past the edge doesn't blow it up to the whole canvas.
+  if (!Number.isFinite(s)) return 1;
+  return Math.max(0.25, Math.min(5, s));
+}
+
 // ── Positions overlay (Phase 2) ────────────────────────────────────────────
 
 /** Mermaid puts `transform="translate(X, Y)"` on every g.node. Parse it. */
@@ -2535,6 +2732,7 @@ function makeColorButton(glyph: string, ariaLabel: string, onPick: (color: strin
   btn.className = 'mb-vCtx-btn mb-vCtx-colorbtn';
   btn.textContent = glyph;
   btn.setAttribute('aria-label', ariaLabel);
+  btn.title = ariaLabel;
 
   const pop = document.createElement('div');
   pop.className = 'mb-vCtx-colorpop mb-hidden';
@@ -2545,6 +2743,7 @@ function makeColorButton(glyph: string, ariaLabel: string, onPick: (color: strin
     s.style.background = c;
     s.dataset.color = c;
     s.setAttribute('aria-label', `${ariaLabel} ${c}`);
+    s.title = c;
     s.addEventListener('mousedown', (e) => { e.preventDefault(); e.stopPropagation(); });
     s.addEventListener('click', (e) => {
       e.preventDefault(); e.stopPropagation();
@@ -2562,6 +2761,88 @@ function makeColorButton(glyph: string, ariaLabel: string, onPick: (color: strin
 
   wrap.append(btn, pop);
   return { el: wrap };
+}
+
+// Node "Style" button — opens a popover with sliders for border thickness and
+// node opacity. Mirrors the edge tip's line panel so users get the same
+// stroke/opacity controls for shapes that they have for edges.
+function makeNodeStyleButton(
+  onChange: (partial: { borderWidth?: number; opacity?: number }) => void,
+): {
+  el: HTMLElement;
+  setState: (borderWidth: number, opacity: number) => void;
+} {
+  const wrap = document.createElement('div');
+  wrap.className = 'mb-vCtx-color mb-vCtx-styleWrap';
+
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'mb-vCtx-btn mb-vCtx-styleBtn';
+  btn.setAttribute('aria-label', 'Stroke and opacity');
+  btn.title = 'Stroke thickness + opacity';
+  // Two stacked sliders glyph (matches "options/levels" idiom).
+  btn.innerHTML = `<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="4" y1="8" x2="20" y2="8"/><circle cx="9" cy="8" r="2" fill="currentColor"/><line x1="4" y1="16" x2="20" y2="16"/><circle cx="15" cy="16" r="2" fill="currentColor"/></svg>`;
+
+  const pop = document.createElement('div');
+  pop.className = 'mb-vCtx-colorpop mb-vCtx-stylepop mb-hidden';
+
+  const thicknessSlider = makeNodeSlider('Border thickness', 0, 8, 0.5, 1, 'px', (v) => onChange({ borderWidth: v }));
+  const opacitySlider   = makeNodeSlider('Opacity', 10, 100, 5, 100, '%', (v) => onChange({ opacity: v / 100 }));
+
+  pop.append(thicknessSlider.el, opacitySlider.el);
+
+  btn.addEventListener('mousedown', (e) => { e.preventDefault(); e.stopPropagation(); });
+  btn.addEventListener('click', (e) => {
+    e.preventDefault(); e.stopPropagation();
+    pop.classList.toggle('mb-hidden');
+  });
+
+  wrap.append(btn, pop);
+  return {
+    el: wrap,
+    setState(bw, op) {
+      thicknessSlider.setValue(bw);
+      opacitySlider.setValue(Math.round(op * 100));
+    },
+  };
+}
+
+// Slider with a tiny label, sized for the dark node context tip. Same shape
+// as makeLabelledSlider but uses the dark-bar styling.
+function makeNodeSlider(
+  label: string, min: number, max: number, step: number,
+  initial: number, suffix: string, onChange: (v: number) => void,
+): { el: HTMLElement; setValue: (v: number) => void } {
+  const wrap = document.createElement('div');
+  wrap.className = 'mb-vCtx-slider';
+  const lab = document.createElement('div');
+  lab.className = 'mb-vCtx-sliderlabel';
+  const labText = document.createElement('span');
+  labText.textContent = label;
+  const valText = document.createElement('span');
+  valText.className = 'mb-vCtx-sliderval';
+  valText.textContent = `${initial}${suffix}`;
+  lab.append(labText, valText);
+  const input = document.createElement('input');
+  input.type = 'range';
+  input.min = String(min);
+  input.max = String(max);
+  input.step = String(step);
+  input.value = String(initial);
+  input.title = label;
+  input.addEventListener('mousedown', (e) => { e.stopPropagation(); });
+  input.addEventListener('input', () => {
+    const v = parseFloat(input.value);
+    if (Number.isFinite(v)) {
+      valText.textContent = `${v}${suffix}`;
+      onChange(v);
+    }
+  });
+  wrap.append(lab, input);
+  return {
+    el: wrap,
+    setValue(v) { input.value = String(v); valText.textContent = `${v}${suffix}`; },
+  };
 }
 
 /** Apply per-node + per-edge style overrides (Phases 5 + 9) to the rendered SVG. */
@@ -2807,6 +3088,26 @@ function applyStyleToNode(g: SVGGElement, s: NodeStyle): void {
       el.setAttribute('stroke', s.border);
       el.style.setProperty('stroke', s.border, 'important');
     }
+    if (s.borderWidth !== undefined) {
+      el.setAttribute('stroke-width', String(s.borderWidth));
+      el.style.setProperty('stroke-width', `${s.borderWidth}px`, 'important');
+    }
+  }
+  // Opacity on the whole node group so background, border, and label fade
+  // together. Don't combine with the resize CSS transform — they're separate
+  // CSS properties on the same element.
+  if (s.opacity !== undefined) {
+    g.style.setProperty('opacity', String(s.opacity), 'important');
+  }
+  // Resize: scale the node from its center via CSS transform. We use
+  // transform-box: fill-box so transform-origin is local to the node's bbox
+  // rather than the SVG root, which keeps the node anchored where mermaid
+  // laid it out.
+  if (s.scale) {
+    const [sx, sy] = s.scale;
+    g.style.setProperty('transform', `scale(${sx}, ${sy})`, 'important');
+    g.style.setProperty('transform-box', 'fill-box', 'important');
+    g.style.setProperty('transform-origin', 'center', 'important');
   }
 
   // Label color + font size + weight live in a foreignObject containing

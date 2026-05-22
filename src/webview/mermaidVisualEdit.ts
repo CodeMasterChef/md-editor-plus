@@ -48,11 +48,16 @@ export interface PassthroughLine {
 export type PositionMap = Record<string, [number, number]>;
 
 export interface NodeStyle {
-  fill?:     string;
-  border?:   string;
-  text?:     string;
-  fontSize?: number;
-  bold?:     boolean;
+  fill?:        string;
+  border?:      string;
+  text?:        string;
+  fontSize?:    number;
+  bold?:        boolean;
+  borderWidth?: number;    // stroke-width on the shape (px)
+  opacity?:     number;    // 0..1 — applied to the whole node g
+  // Per-node scale override (width / height multipliers). Stored together
+  // because resize handles always set both at once. CSS transform on g.node.
+  scale?: [number, number];
 }
 export type StyleMap = Record<string, NodeStyle>;
 
@@ -382,7 +387,8 @@ function writeStylesLine(ast: Ast, map: StyleMap): void {
   // Drop entries with zero meaningful fields so the sidecar stays tidy.
   const filtered: StyleMap = {};
   for (const [k, v] of Object.entries(map)) {
-    if (v.fill || v.border || v.text || v.fontSize !== undefined || v.bold !== undefined) {
+    if (v.fill || v.border || v.text || v.fontSize !== undefined || v.bold !== undefined
+        || v.borderWidth !== undefined || v.opacity !== undefined || v.scale !== undefined) {
       filtered[k] = v;
     }
   }
@@ -558,11 +564,17 @@ function tryParseStylesLine(trimmed: string): StyleMap | null {
       if (!v || typeof v !== 'object') continue;
       const s = v as Record<string, unknown>;
       const entry: NodeStyle = {};
-      if (typeof s.fill     === 'string') entry.fill     = s.fill;
-      if (typeof s.border   === 'string') entry.border   = s.border;
-      if (typeof s.text     === 'string') entry.text     = s.text;
-      if (typeof s.fontSize === 'number') entry.fontSize = s.fontSize;
-      if (typeof s.bold     === 'boolean') entry.bold    = s.bold;
+      if (typeof s.fill        === 'string') entry.fill        = s.fill;
+      if (typeof s.border      === 'string') entry.border      = s.border;
+      if (typeof s.text        === 'string') entry.text        = s.text;
+      if (typeof s.fontSize    === 'number') entry.fontSize    = s.fontSize;
+      if (typeof s.bold        === 'boolean') entry.bold       = s.bold;
+      if (typeof s.borderWidth === 'number') entry.borderWidth = s.borderWidth;
+      if (typeof s.opacity     === 'number') entry.opacity     = s.opacity;
+      if (Array.isArray(s.scale) && s.scale.length === 2
+          && typeof s.scale[0] === 'number' && typeof s.scale[1] === 'number') {
+        entry.scale = [s.scale[0], s.scale[1]];
+      }
       out[k] = entry;
     }
     return out;
