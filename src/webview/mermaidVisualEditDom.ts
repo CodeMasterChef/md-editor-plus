@@ -4846,10 +4846,8 @@ function redrawEdge(pathEl: SVGPathElement, fromId: string, toId: string, host: 
   const aCenter = readNodeTranslate(fromNode);
   const bCenter = readNodeTranslate(toNode);
   if (!aCenter || !bCenter) return;
-  const aHalf = nodeHalfExtent(fromNode);
-  const bHalf = nodeHalfExtent(toNode);
-  const aEdge = shrinkToNodeEdge(aCenter, aHalf, bCenter);
-  const bEdge = shrinkToNodeEdge(bCenter, bHalf, aCenter);
+  const aEdge = shrinkToNodeEdge(aCenter, fromNode, bCenter);
+  const bEdge = shrinkToNodeEdge(bCenter, toNode,   aCenter);
   pathEl.setAttribute('d', bezierPath(aEdge, bEdge));
 
   // Mermaid renders each edge's label as a sibling <g.edgeLabel> inside
@@ -4886,23 +4884,184 @@ function nodeHalfExtent(n: SVGGElement): { w: number; h: number } {
   }
 }
 
-/** Move `center` along the direction `toward - center` until it hits the
-    rectangle edge defined by `half`. Result lies on the node's boundary in
-    the direction of `toward` — so the arrowhead lands flush against the
-    node instead of inside it. */
+/** Shape-aware clamp. Given the node's center in global SVG coords, the
+    node's <g> element (so we can inspect the actual rendered shape), and a
+    point `toward` in the same global space, returns the point where a ray
+    from `center` to `toward` exits the visible outline of the shape.
+
+    For a rect/round/pill/subroutine this is the rect-edge clamp (current
+    behavior, fast). For a circle we use line-circle intersection. For a
+    polygon (diamond, hexagon, trapezoid, parallelogram) we intersect the
+    ray against each polygon edge and take the closest exit. For a path
+    (cylinder, etc.) we approximate with the bbox rect but pull the bottom
+    edge slightly inward to compensate for the ellipse undershoot. The
+    fallback for an unknown shape is the original rect-edge clamp.
+
+    Result is clamped to never overshoot `toward` (so a tiny node still
+    behaves correctly when the endpoint is dragged inside its own bbox). */
 function shrinkToNodeEdge(
   center: { x: number; y: number },
-  half:   { w: number; h: number },
+  node:   SVGGElement,
   toward: { x: number; y: number },
 ): { x: number; y: number } {
   const dx = toward.x - center.x;
   const dy = toward.y - center.y;
   if (dx === 0 && dy === 0) return center;
-  let tx = Infinity, ty = Infinity;
-  if (dx !== 0) tx = half.w / Math.abs(dx);
-  if (dy !== 0) ty = half.h / Math.abs(dy);
-  const t = Math.min(tx, ty, 1); // never overshoot the toward point
+
+  const shape = findPrimaryShape(node);
+  const kind  = shape ? shapeKindFromElement(shape) : 'rect';
+  const half  = nodeHalfExtent(node);
+
+  let t: number;
+  if (kind === 'circle') {
+    // True circle — line-circle intersection at radius = min half-extent.
+    // Mermaid sometimes draws a circle as <ellipse> with rx==ry; we still
+    // pick up rx/ry from the element so we honor the actual rendered size.
+    const r = shape && shape.tagName.toLowerCase() === 'circle'
+      ? parseFloat(shape.getAttribute('r') ?? '0') || Math.min(half.w, half.h)
+      : Math.min(half.w, half.h);
+    t = solveRayToCircle(dx, dy, r);
+  } else if (kind === 'ellipse') {
+    const rx = shape ? parseFloat(shape.getAttribute('rx') ?? '0') || half.w : half.w;
+    const ry = shape ? parseFloat(shape.getAttribute('ry') ?? '0') || half.h : half.h;
+    t = solveRayToEllipse(dx, dy, rx, ry);
+  } else if (kind === 'polygon' && shape) {
+    // Diamond, hexagon, trapezoid, parallelogram — intersect the ray with
+    // each polygon edge. Polygon coords are in the node's local space
+    // (mermaid centers them at 0,0), so the ray in local coords starts at
+    // the origin and points in (dx, dy).
+    t = solveRayToPolygon(dx, dy, polygonPoints(shape as SVGPolygonElement));
+  } else if (kind === 'cylinder') {
+    // Cylinder is a path: a rect with rounded top and bottom ellipses.
+    // The bbox includes the ellipse bumps, so a plain rect clamp leaves
+    // ~4-6px of empty space below/above the visible body. Pull those edges
+    // in by ~5px so the arrow tip lands on the visible curve.
+    const ELLIPSE_INSET = 5;
+    const insetH = Math.max(half.h - ELLIPSE_INSET, half.h * 0.6);
+    t = solveRayToRect(dx, dy, half.w, insetH);
+  } else {
+    // rect / round / pill / subroutine / unknown — fall back to rect clamp.
+    t = solveRayToRect(dx, dy, half.w, half.h);
+  }
+
+  // Never overshoot the toward point (tiny-node case).
+  t = Math.min(Math.max(t, 0), 1);
   return { x: center.x + t * dx, y: center.y + t * dy };
+}
+
+/** Classify the rendered shape by tag + role. Returns a normalized kind:
+    'rect' (incl. round, pill, subroutine), 'circle', 'ellipse', 'polygon'
+    (diamond, hexagon, trapezoid, parallelogram), 'cylinder' (path), or
+    'unknown'. We use a path's bbox aspect ratio to detect cylinder-like
+    shapes vs. other path shapes, but the rect fallback handles both fine. */
+function shapeKindFromElement(el: SVGGraphicsElement): 'rect' | 'circle' | 'ellipse' | 'polygon' | 'cylinder' | 'unknown' {
+  const tag = el.tagName.toLowerCase();
+  if (tag === 'rect')    return 'rect';
+  if (tag === 'circle')  return 'circle';
+  if (tag === 'ellipse') {
+    const rx = parseFloat(el.getAttribute('rx') ?? '0');
+    const ry = parseFloat(el.getAttribute('ry') ?? '0');
+    return rx > 0 && ry > 0 && Math.abs(rx - ry) < 0.5 ? 'circle' : 'ellipse';
+  }
+  if (tag === 'polygon') return 'polygon';
+  if (tag === 'path')    return 'cylinder'; // treat all path shapes as cylinder-like
+  return 'unknown';
+}
+
+/** Ray-vs-rect: how far along (dx, dy) from origin do we first hit a side
+    of the centered rect [-w, +w] × [-h, +h]? */
+function solveRayToRect(dx: number, dy: number, w: number, h: number): number {
+  let tx = Infinity, ty = Infinity;
+  if (dx !== 0) tx = w / Math.abs(dx);
+  if (dy !== 0) ty = h / Math.abs(dy);
+  return Math.min(tx, ty);
+}
+
+/** Ray-vs-circle (centered at origin, radius r). The ray is parameterized
+    as (t*dx, t*dy); we want the smallest t > 0 with t² (dx² + dy²) = r². */
+function solveRayToCircle(dx: number, dy: number, r: number): number {
+  const d2 = dx * dx + dy * dy;
+  if (d2 === 0) return 0;
+  return r / Math.sqrt(d2);
+}
+
+/** Ray-vs-ellipse (centered at origin, semi-axes rx, ry). Solve
+    (t*dx/rx)² + (t*dy/ry)² = 1 → t = 1 / sqrt((dx/rx)² + (dy/ry)²). */
+function solveRayToEllipse(dx: number, dy: number, rx: number, ry: number): number {
+  if (rx <= 0 || ry <= 0) return 0;
+  const a = dx / rx;
+  const b = dy / ry;
+  const denom = Math.sqrt(a * a + b * b);
+  return denom === 0 ? 0 : 1 / denom;
+}
+
+/** Ray-vs-polygon: intersect the ray (from local origin in direction (dx, dy))
+    against every polygon edge. Polygon points are in the node's local SVG
+    space (mermaid centers them at ~(0, 0)). We return the smallest positive
+    t where the ray crosses any edge — the polygon's outline in that
+    direction. If no edge crosses, fall back to the polygon's bbox extents. */
+function solveRayToPolygon(dx: number, dy: number, points: Array<{ x: number; y: number }>): number {
+  if (points.length < 2) return solveRayToRect(dx, dy, 30, 20);
+  let best = Infinity;
+  for (let i = 0; i < points.length; i++) {
+    const p1 = points[i];
+    const p2 = points[(i + 1) % points.length];
+    // Segment: P1 + s * (P2 - P1), s ∈ [0, 1].
+    // Ray:     (0, 0) + t * (dx, dy), t > 0.
+    // Solve:   t * dx = p1.x + s * (p2.x - p1.x)
+    //          t * dy = p1.y + s * (p2.y - p1.y)
+    const sx = p2.x - p1.x;
+    const sy = p2.y - p1.y;
+    const denom = dx * sy - dy * sx;
+    if (denom === 0) continue; // parallel
+    const t = (p1.x * sy - p1.y * sx) / denom;
+    const s = (p1.x * dy - p1.y * dx) / denom;
+    if (t > 0 && s >= 0 && s <= 1 && t < best) best = t;
+  }
+  if (!isFinite(best)) {
+    // Degenerate — fall back to polygon's axis-aligned bbox half-extents.
+    let maxX = 0, maxY = 0;
+    for (const p of points) {
+      if (Math.abs(p.x) > maxX) maxX = Math.abs(p.x);
+      if (Math.abs(p.y) > maxY) maxY = Math.abs(p.y);
+    }
+    return solveRayToRect(dx, dy, maxX, maxY);
+  }
+  return best;
+}
+
+/** Read a polygon's points attribute into a normalized array, centered on
+    the polygon's bbox center so the ray-clamp math (which assumes the node
+    is centered at the origin) lines up regardless of how mermaid emitted
+    the coordinates. */
+function polygonPoints(poly: SVGPolygonElement): Array<{ x: number; y: number }> {
+  // Prefer the scaled live points; fall back to parsing the attribute. The
+  // SVGPolygonElement.points list reflects whatever mermaid currently has
+  // set on the element (including any scaling we applied during resize).
+  const raw = poly.getAttribute('points') ?? '';
+  const out: Array<{ x: number; y: number }> = [];
+  // Accept both "x,y x,y" and "x y x y" pairings.
+  const nums = raw.trim().split(/[\s,]+/).map(parseFloat).filter(n => isFinite(n));
+  for (let i = 0; i + 1 < nums.length; i += 2) {
+    out.push({ x: nums[i], y: nums[i + 1] });
+  }
+  if (out.length === 0) return out;
+  // Center on the polygon's bbox so the clamp math (which uses a ray from
+  // the local origin) is correct even when mermaid emits all-positive
+  // points (e.g. (0, 0)→(w, h)).
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for (const p of out) {
+    if (p.x < minX) minX = p.x;
+    if (p.x > maxX) maxX = p.x;
+    if (p.y < minY) minY = p.y;
+    if (p.y > maxY) maxY = p.y;
+  }
+  const cx = (minX + maxX) / 2;
+  const cy = (minY + maxY) / 2;
+  // If the polygon is already centered around (0, 0) (within 0.5px), skip
+  // the recentering — keeps numbers tidy and matches the bbox semantics.
+  if (Math.abs(cx) < 0.5 && Math.abs(cy) < 0.5) return out;
+  return out.map(p => ({ x: p.x - cx, y: p.y - cy }));
 }
 
 /** Mermaid edge ids look like `<diagramPrefix>-L_<from>_<to>_<n>` (v11) or
