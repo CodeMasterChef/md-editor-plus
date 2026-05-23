@@ -28,6 +28,10 @@ const ICON_COPY   = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" 
 const ICON_PENCIL = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"/></svg>`;
 const ICON_ALERT  = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>`;
 const ICON_MORE   = `<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5"  cy="12" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="19" cy="12" r="1.8"/></svg>`;
+// Eye + Code icons — same Phosphor glyphs as the top-of-plugin Preview/Code
+// segmented toggle so the visual language matches.
+const ICON_EYE    = `<svg viewBox="0 0 256 256" width="14" height="14" fill="currentColor" aria-hidden="true"><path d="M251,123.13c-.37-.81-9.13-20.26-28.48-39.61C196.63,57.67,164,44,128,44S59.37,57.67,33.51,83.52C14.16,102.87,5.4,122.32,5,123.13a12.08,12.08,0,0,0,0,9.75c.37.82,9.13,20.26,28.49,39.61C59.37,198.34,92,212,128,212s68.63-13.66,94.48-39.51c19.36-19.35,28.12-38.79,28.49-39.61A12.08,12.08,0,0,0,251,123.13Zm-46.06,33C183.47,177.27,157.59,188,128,188s-55.47-10.73-76.91-31.88A130.36,130.36,0,0,1,29.52,128,130.45,130.45,0,0,1,51.09,99.89C72.54,78.73,98.41,68,128,68s55.46,10.73,76.91,31.89A130.36,130.36,0,0,1,226.48,128,130.45,130.45,0,0,1,204.91,156.12ZM128,84a44,44,0,1,0,44,44A44.05,44.05,0,0,0,128,84Zm0,64a20,20,0,1,1,20-20A20,20,0,0,1,128,148Z"/></svg>`;
+const ICON_CODE_V = `<svg viewBox="0 0 256 256" width="14" height="14" fill="currentColor" aria-hidden="true"><path d="M96,73,34.06,128,96,183A12,12,0,1,1,80,201L8,137A12,12,0,0,1,8,119L80,55A12,12,0,0,1,96,73ZM248,119,176,55A12,12,0,1,0,160,73l61.91,55L160,183A12,12,0,1,0,176,201l72-64A12,12,0,0,0,248,119Z"/></svg>`;
 
 const MermaidBlock = CodeBlock.extend({
   name: 'codeBlock', // keep the same node type as the base CodeBlock
@@ -65,14 +69,22 @@ function buildMermaidView(props: unknown) {
   dom.dataset.lang = 'mermaid';
 
   // ── Header (floating chrome, no bar) ─────────────────────────────────────
-  // Two icon buttons in the top-right: Expand + a "more" three-dots menu
-  // that contains the Edit toggle and all copy / download actions. The
-  // chrome is hidden in preview mode unless the user hovers the block;
+  // LEFT:  segmented eye/code toggle (preview ↔ source) — matches the
+  //        Preview/Code toggle at the top of the plugin minus the labels.
+  // RIGHT: Expand icon + ⋯ More menu (Edit toggle + copy/download).
+  // The chrome is hidden in preview mode unless the user hovers the block;
   // it stays visible while editing source or in visual-edit mode.
   const header = document.createElement('div');
   header.className = 'mb-header';
   header.contentEditable = 'false';
 
+  const leftGroup = document.createElement('div');
+  leftGroup.className = 'mb-header-left';
+  const viewToggle = buildViewToggle();
+  leftGroup.append(viewToggle.el);
+
+  const rightGroup = document.createElement('div');
+  rightGroup.className = 'mb-header-right';
   const expandBtn = buildIconButton(ICON_EXPAND, 'Open fullscreen');
   expandBtn.classList.add('mb-expand');
   const more = buildMoreMenu();
@@ -80,8 +92,9 @@ function buildMermaidView(props: unknown) {
   // `copySplit` object — we expose the same surface from inside `more`.
   const toggle = more.toggle;
   const copySplit = more.copy;
+  rightGroup.append(expandBtn, more.el);
 
-  header.append(expandBtn, more.el);
+  header.append(leftGroup, rightGroup);
 
   // ── Preview pane ───────────────────────────────────────────────────────
   // preview = outer pane (also hosts visual-edit overlays as siblings)
@@ -136,6 +149,7 @@ function buildMermaidView(props: unknown) {
     editing = on;
     dom.classList.toggle('mb-editing', on);
     toggle.setOn(on);
+    viewToggle.setMode(on ? 'source' : 'preview');
     if (on) {
       showSnackbar();
       // Place the caret at the end of the code block so typing works
@@ -293,6 +307,9 @@ function buildMermaidView(props: unknown) {
     e.stopPropagation();
     setEditing(!editing);
   });
+  // Eye/Code segmented control fires the same setEditing path so the two
+  // controls stay in sync.
+  viewToggle.onChange((mode) => setEditing(mode === 'source'));
 
   // ── Wire double-click on preview ───────────────────────────────────────
   // Double-click prefers visual edit; only flowchart/graph blocks qualify.
@@ -401,6 +418,58 @@ function buildMermaidView(props: unknown) {
 interface ToggleHandle {
   el:    HTMLElement;
   setOn: (on: boolean) => void;
+}
+
+// Segmented eye/code toggle for the LEFT side of the block header. Two
+// pill-shaped icon buttons, the active one filled. Drives setEditing(on)
+// via the `onChange` callback the caller wires up.
+interface ViewToggleHandle {
+  el:      HTMLElement;
+  setMode: (mode: 'preview' | 'source') => void;
+  onChange:(cb: (mode: 'preview' | 'source') => void) => void;
+}
+function buildViewToggle(): ViewToggleHandle {
+  const wrap = document.createElement('div');
+  wrap.className = 'mb-view-seg';
+  wrap.setAttribute('role', 'group');
+  wrap.setAttribute('aria-label', 'View mode');
+
+  function makeBtn(mode: 'preview' | 'source', icon: string, tip: string): HTMLButtonElement {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'mb-view-seg-btn';
+    b.dataset.mode = mode;
+    b.dataset.tip = tip;
+    b.setAttribute('aria-label', tip);
+    b.setAttribute('aria-pressed', mode === 'preview' ? 'true' : 'false');
+    b.innerHTML = icon;
+    b.addEventListener('mousedown', (e) => { e.preventDefault(); e.stopPropagation(); });
+    return b;
+  }
+  const previewBtn = makeBtn('preview', ICON_EYE,    'Preview');
+  const sourceBtn  = makeBtn('source',  ICON_CODE_V, 'Source');
+  previewBtn.classList.add('mb-view-seg-active');
+  wrap.append(previewBtn, sourceBtn);
+
+  const listeners: Array<(mode: 'preview' | 'source') => void> = [];
+  function dispatch(mode: 'preview' | 'source'): void {
+    for (const fn of listeners) fn(mode);
+  }
+  previewBtn.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); dispatch('preview'); });
+  sourceBtn .addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); dispatch('source');  });
+
+  function setMode(mode: 'preview' | 'source'): void {
+    previewBtn.classList.toggle('mb-view-seg-active', mode === 'preview');
+    sourceBtn .classList.toggle('mb-view-seg-active', mode === 'source');
+    previewBtn.setAttribute('aria-pressed', String(mode === 'preview'));
+    sourceBtn .setAttribute('aria-pressed', String(mode === 'source'));
+  }
+
+  return {
+    el: wrap,
+    setMode,
+    onChange(cb) { listeners.push(cb); },
+  };
 }
 
 function buildToggle(): ToggleHandle {
