@@ -3698,14 +3698,40 @@ function applyNodeScale(g: SVGGElement, sx: number, sy: number): void {
       return `${px * sx},${py * sy}`;
     }).join(' ');
     shape.setAttribute('points', scaled);
-  } else {
-    // Path-based shapes (cylinder, subroutine, callout). Geometric resize of
-    // arbitrary paths is hard — fall back to CSS transform with the
-    // transform-origin set to the node center. The label still scales here,
-    // but at least the position stays put.
-    g.style.setProperty('transform', `scale(${sx}, ${sy})`, 'important');
-    g.style.setProperty('transform-box', 'fill-box', 'important');
-    g.style.setProperty('transform-origin', 'center', 'important');
+  } else if (tag === 'path') {
+    // Path-based shapes (cylinder, subroutine, callout). Geometric scaling
+    // of an arbitrary `d` is hard. Instead, we scale the path via its own
+    // SVG transform attribute, anchored at the path's bbox center, and
+    // PRESERVE whatever transform mermaid originally put on the path
+    // (typically a translate that aligns the path inside g.node). The
+    // g.node's translate stays untouched so the node doesn't jump.
+    let origT = ds.mbOrigPathTransform;
+    let oCx = parseFloat(ds.mbOrigPathCx ?? '');
+    let oCy = parseFloat(ds.mbOrigPathCy ?? '');
+    if (origT === undefined || !isFinite(oCx) || !isFinite(oCy)) {
+      origT = shape.getAttribute('transform') ?? '';
+      ds.mbOrigPathTransform = origT;
+      try {
+        const bb = shape.getBBox();
+        oCx = bb.x + bb.width / 2;
+        oCy = bb.y + bb.height / 2;
+      } catch { oCx = 0; oCy = 0; }
+      ds.mbOrigPathCx = String(oCx);
+      ds.mbOrigPathCy = String(oCy);
+    }
+    // Compose: ${origT} (mermaid's transform, outermost) then a
+    // translate-scale-translate around (oCx, oCy) so the path grows from
+    // its visual center rather than its d-coord origin.
+    const prefix = origT ? `${origT} ` : '';
+    shape.setAttribute('transform',
+      `${prefix}translate(${oCx}, ${oCy}) scale(${sx}, ${sy}) translate(${-oCx}, ${-oCy})`);
+  }
+  // Clear any prior CSS transform we may have stamped on the g — older
+  // renders applied scale that way and the rule should no longer apply.
+  if (g.style.transform) {
+    g.style.removeProperty('transform');
+    g.style.removeProperty('transform-box');
+    g.style.removeProperty('transform-origin');
   }
 }
 
