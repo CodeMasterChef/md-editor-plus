@@ -737,11 +737,15 @@ export function createVisualEditor(opts: VisualEditorOptions): VisualEditorHandl
     if (meta && (e.key === '-' || e.key === '_')) { e.preventDefault(); setZoom(viewport.scale - 0.1); return; }
     if (meta &&  e.key === '0')                   { e.preventDefault(); resetViewport();                 return; }
 
-    // Space — temporary Pan grab cursor (matches Figma / Miro).
-    if (e.key === ' ' && !e.repeat && !meta && !e.altKey) {
+    // Space — temporary Pan grab cursor (matches Figma / Miro). Prevent
+    // the browser default (page scroll) on every event, including repeats,
+    // since holding space would otherwise scroll the surrounding page.
+    if (e.key === ' ' && !meta && !e.altKey) {
       e.preventDefault();
-      spaceHeld = true;
-      opts.previewPane.classList.add('mb-pan-temp');
+      if (!e.repeat) {
+        spaceHeld = true;
+        opts.previewPane.classList.add('mb-pan-temp');
+      }
       return;
     }
 
@@ -2071,6 +2075,8 @@ export function createVisualEditor(opts: VisualEditorOptions): VisualEditorHandl
     destroy(): void {
       opts.block.classList.remove('mb-visual-active');
       delete opts.block.dataset.mbViewportLocked;
+      // Strip the dot grid so the static preview doesn't keep it.
+      removeDotGrid(opts.previewPane);
       opts.previewPane.removeEventListener('click', onPreviewClick);
       opts.previewPane.removeEventListener('mousedown', onDragMouseDown, true);
       opts.previewPane.removeEventListener('wheel',     onWheel);
@@ -3354,7 +3360,8 @@ function closestHook(g: SVGGElement, p: { x: number; y: number }): { x: number; 
 
 const DOT_GRID_BASE_UNIT = 4;          // SVG user units per "step" (small base → tighter dots)
 const DOT_GRID_TARGET_SCREEN_PX = 22;   // ideal on-screen distance between dots
-const DOT_GRID_RADIUS_RATIO = 0.10;     // dot radius = ratio * spacing (visible at any zoom)
+const DOT_GRID_RADIUS_RATIO = 0.075;    // dot radius = ratio * spacing (visible but not chunky)
+const DOT_GRID_MAX_RADIUS = 1.6;        // ceiling so the biggest snap level doesn't look chunky
 
 function gridSpacingForScale(scale: number): number {
   // Snap unitSpacing to base * 2^level so spacing changes only at thresholds.
@@ -3385,10 +3392,8 @@ function installDotGrid(host: HTMLElement): void {
   }
 
   // Start at the baseline spacing — `updateDotGrid` will rescale on zoom.
-  // Pick a sensible initial spacing for the current "natural" zoom rather
-  // than the absolute base; the level-snap math fires immediately anyway.
   const spacing = gridSpacingForScale(1);
-  const radius  = Math.max(0.6, spacing * DOT_GRID_RADIUS_RATIO);
+  const radius  = Math.min(DOT_GRID_MAX_RADIUS, Math.max(0.5, spacing * DOT_GRID_RADIUS_RATIO));
   const pattern = document.createElementNS(ns, 'pattern');
   pattern.setAttribute('id', 'mb-vDotGrid-pattern');
   pattern.setAttribute('width',  String(spacing));
@@ -3402,10 +3407,11 @@ function installDotGrid(host: HTMLElement): void {
   pattern.appendChild(dot);
   defs.appendChild(pattern);
 
-  // Cover a generous area around the viewBox so panning / zoom-out
-  // stay populated. Placed as the first renderable child so it sits
-  // behind every other SVG layer.
-  const pad = Math.max(vb.width, vb.height) * 2;
+  // The background rect must cover the entire visible canvas across every
+  // zoom level so the user never sees a hard SVG edge at the pattern's
+  // boundary. Pad 10× the viewBox dimensions — beyond what the zoom
+  // range (0.2× .. 4×) could reveal.
+  const pad = Math.max(vb.width, vb.height) * 10;
   const bg = document.createElementNS(ns, 'rect');
   bg.setAttribute('class', 'mb-vDotGrid');
   bg.setAttribute('x',      String(vb.x - pad));
@@ -3414,8 +3420,20 @@ function installDotGrid(host: HTMLElement): void {
   bg.setAttribute('height', String(vb.height + pad * 2));
   bg.setAttribute('fill', 'url(#mb-vDotGrid-pattern)');
   bg.setAttribute('pointer-events', 'none');
+  // Insert as the FIRST renderable child so it always sits behind every
+  // other SVG layer (defs come first, but they don't render visually).
   if (defs.nextSibling) svg.insertBefore(bg, defs.nextSibling);
   else                  svg.appendChild(bg);
+}
+
+// Remove the dot pattern + background rect — called when the visual
+// editor destroys so the static preview doesn't keep showing the grid.
+function removeDotGrid(host: HTMLElement): void {
+  const svg = host.querySelector<SVGSVGElement>('.mb-svg-host svg');
+  if (!svg) return;
+  for (const old of Array.from(svg.querySelectorAll('.mb-vDotGrid, #mb-vDotGrid-pattern'))) {
+    old.remove();
+  }
 }
 
 // Update the pattern spacing + dot radius for the current zoom — call on
@@ -3425,7 +3443,7 @@ function updateDotGrid(host: HTMLElement, scale: number): void {
   const pattern = host.querySelector<SVGPatternElement>('#mb-vDotGrid-pattern');
   if (!pattern) return;
   const spacing = gridSpacingForScale(scale);
-  const radius  = Math.max(0.6, spacing * DOT_GRID_RADIUS_RATIO);
+  const radius  = Math.min(DOT_GRID_MAX_RADIUS, Math.max(0.5, spacing * DOT_GRID_RADIUS_RATIO));
   pattern.setAttribute('width',  String(spacing));
   pattern.setAttribute('height', String(spacing));
   const dot = pattern.querySelector('circle');

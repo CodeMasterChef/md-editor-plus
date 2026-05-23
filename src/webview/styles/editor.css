@@ -4230,29 +4230,35 @@ html.theme-dark .ProseMirror .mb-vTb-grid.mb-vTb-active {
 }
 
 /* ===========================================================================
-   Phase 12: Bottom toolbar v2 — matches context-tip white design,
-   bolder phosphor-style icons.
+   Phase 12: Left-side vertical toolbar v2 — matches context-tip white
+   design, bolder phosphor-style icons. ~15% smaller than the bottom
+   version it replaced.
    =========================================================================== */
 .ProseMirror .mb-vTb.mb-vTb2 {
-  bottom: 18px;
-  padding: 6px 8px;
+  /* Override the base .mb-vTb position (bottom-center) → left-center. */
+  top: 50%;
+  bottom: auto;
+  left: 14px;
+  transform: translateY(-50%);
+  flex-direction: column;
+  padding: 6px;
   gap: 2px;
   background: var(--bg);
   color: var(--text-primary);
   border: 1px solid var(--border);
   border-radius: 14px;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.10);
-  font: 500 13px var(--font-body);
+  font: 500 12px var(--font-body);
 }
 .ProseMirror .mb-vTb2 .mb-vTb-btn {
-  width: 36px;
-  height: 36px;
-  border-radius: 8px;
+  width: 31px;
+  height: 31px;
+  border-radius: 7px;
   color: var(--text-primary);
 }
 .ProseMirror .mb-vTb2 .mb-vTb-btn svg {
-  width: 20px;
-  height: 20px;
+  width: 17px;
+  height: 17px;
 }
 .ProseMirror .mb-vTb2 .mb-vTb-btn:hover {
   background: var(--block-hover);
@@ -4262,20 +4268,21 @@ html.theme-dark .ProseMirror .mb-vTb-grid.mb-vTb-active {
   background: var(--callout-note-bg);
   color: var(--callout-note-accent);
 }
+/* Separators run horizontal now that the bar is vertical. */
 .ProseMirror .mb-vTb2 .mb-vTb-sep {
-  width: 1px;
-  height: 22px;
+  width: 22px;
+  height: 1px;
   background: var(--border);
-  margin: 0 4px;
+  margin: 4px 0;
 }
 
-/* Shapes popover above the toolbar — same white card as the context tip
-   popovers. With 10 shapes we use a 5-column grid so the popover stays
-   readable without becoming too wide. */
+/* Shapes popover to the RIGHT of the (now left-side) toolbar — same
+   white card as the context-tip popovers. 5×2 grid for the 10 shapes. */
 .ProseMirror .mb-vTb2 .mb-vTb-shapespop {
-  bottom: calc(100% + 8px);
-  left: 50%;
-  transform: translateX(-50%);
+  left: calc(100% + 8px);
+  top: 50%;
+  bottom: auto;
+  transform: translateY(-50%);
   background: var(--bg);
   border: 1px solid var(--border);
   border-radius: 12px;
@@ -4287,13 +4294,13 @@ html.theme-dark .ProseMirror .mb-vTb-grid.mb-vTb-active {
   z-index: 31;
 }
 .ProseMirror .mb-vTb2 .mb-vTb-shapespop-item {
-  width: 40px;
-  height: 40px;
-  border-radius: 8px;
+  width: 34px;
+  height: 34px;
+  border-radius: 7px;
 }
 .ProseMirror .mb-vTb2 .mb-vTb-shapespop-item svg {
-  width: 22px;
-  height: 22px;
+  width: 18px;
+  height: 18px;
 }
 .ProseMirror .mb-vTb2 .mb-vTb-reset.mb-vTb-disabled {
   opacity: 0.45;
