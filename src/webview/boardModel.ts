@@ -310,7 +310,10 @@ function serializeView(v: ViewDef): string {
   if (v.sort)    parts.push(`sort="${v.sort.field},${v.sort.dir}"`);
   if (v.groupBy) parts.push(`group="${v.groupBy}"`);
   if (v.widths && Object.keys(v.widths).length > 0) {
-    const widthStr = Object.entries(v.widths).map(([k, n]) => `${k}=${n}`).join(',');
+    const widthStr = Object.entries(v.widths)
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([k, n]) => `${k}=${n}`)
+      .join(',');
     parts.push(`widths="${widthStr}"`);
   }
   if (v.extras) {

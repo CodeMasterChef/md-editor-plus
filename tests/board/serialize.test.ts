@@ -153,7 +153,7 @@ describe('serializeBoard — views', () => {
     expect(out).toContain('hidden="id"');
     expect(out).toContain('sort="Title,asc"');
     expect(out).toContain('group="Status"');
-    expect(out).toContain('widths="Title=200,Status=100"');
+    expect(out).toContain('widths="Status=100,Title=200"');
   });
 
   it('preserves extras on round-trip', () => {

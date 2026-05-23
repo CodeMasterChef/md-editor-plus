@@ -37,6 +37,19 @@ const FIXTURES: { name: string; source: string }[] = [
       `<!-- board:end -->`,
     ].join('\n'),
   },
+  {
+    name: 'board with table view',
+    source: [
+      `<!-- board:start id="b1" name="X" columns="Todo|Doing" column-colors="blue|amber" field-types="Title=text,Status=status,id=text" hidden-fields="id" active-view="table" -->`,
+      `<!-- board:view name="table" columns="Title,Status" hidden="id" sort="Title,asc" group="Status" widths="Status=100,Title=200" -->`,
+      ``,
+      `| Title | Status | id |`,
+      `|---|---|---|`,
+      `| A | Todo | c1 |`,
+      ``,
+      `<!-- board:end -->`,
+    ].join('\n'),
+  },
 ];
 
 describe('board source round-trip', () => {
