@@ -1234,3 +1234,13 @@ body.is-dragging-property .board-properties-name { user-select: none; }
   background: transparent;
   color: var(--board-text);
 }
+
+/* Shared drop indicator — a 2px line, always blue, never an outline on rows. */
+.bd-drop-line {
+  background: var(--link);
+  border-radius: 1px;
+  opacity: 0;
+  transition: opacity 80ms ease;
+  z-index: 30;
+}
+.bd-drop-line-visible { opacity: 1; }
