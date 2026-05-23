@@ -1,0 +1,95 @@
+import type { Board, ViewDef } from '../../src/webview/boardModel';
+import * as ops from '../../src/webview/boardOps';
+
+function makeBoard(overrides: Partial<Board> = {}): Board {
+  return {
+    id: 'b1', name: 'X',
+    columns: [
+      { name: 'Todo',  color: 'blue' },
+      { name: 'Doing', color: 'amber' },
+    ],
+    fields: [
+      { name: 'Title',  type: 'text',   visibleOnCard: true },
+      { name: 'Status', type: 'status', visibleOnCard: true },
+      { name: 'Owner',  type: 'person', visibleOnCard: true },
+    ],
+    cards: [
+      { id: 'c1', values: { id: 'c1', Title: 'A', Status: 'Todo',  Owner: 'X' }, body: '' },
+      { id: 'c2', values: { id: 'c2', Title: 'B', Status: 'Doing', Owner: 'Y' }, body: '' },
+    ],
+    orphanBodies: [],
+    views: [],
+    activeView: 'kanban',
+    ...overrides,
+  };
+}
+
+describe('boardOps.setViewSort', () => {
+  it('creates a view if missing and sets sort', () => {
+    const b = makeBoard();
+    ops.setViewSort(b, 'table', { field: 'Title', dir: 'asc' });
+    expect(b.views).toHaveLength(1);
+    expect(b.views[0]).toEqual({ name: 'table', sort: { field: 'Title', dir: 'asc' } });
+  });
+  it('clears sort when passed null', () => {
+    const b = makeBoard({ views: [{ name: 'table', sort: { field: 'X', dir: 'asc' } }] });
+    ops.setViewSort(b, 'table', null);
+    expect(b.views[0]?.sort).toBeUndefined();
+  });
+});
+
+describe('boardOps.setViewGroup', () => {
+  it('creates view + sets groupBy', () => {
+    const b = makeBoard();
+    ops.setViewGroup(b, 'table', 'Status');
+    expect(b.views[0].groupBy).toBe('Status');
+  });
+  it('clears groupBy when passed null', () => {
+    const b = makeBoard({ views: [{ name: 'table', groupBy: 'Status' }] });
+    ops.setViewGroup(b, 'table', null);
+    expect(b.views[0]?.groupBy).toBeUndefined();
+  });
+});
+
+describe('boardOps.setViewWidth', () => {
+  it('sets a width on the view', () => {
+    const b = makeBoard();
+    ops.setViewWidth(b, 'table', 'Title', 240);
+    expect(b.views[0].widths).toEqual({ Title: 240 });
+  });
+  it('removes a width entry when passed null', () => {
+    const b = makeBoard({ views: [{ name: 'table', widths: { Title: 240, Status: 100 } }] });
+    ops.setViewWidth(b, 'table', 'Title', null);
+    expect(b.views[0].widths).toEqual({ Status: 100 });
+  });
+});
+
+describe('boardOps.hideFieldInView', () => {
+  it('adds field to view.hidden', () => {
+    const b = makeBoard();
+    ops.hideFieldInView(b, 'table', 'Owner');
+    expect(b.views[0].hidden).toEqual(['Owner']);
+  });
+});
+
+describe('boardOps.deleteField', () => {
+  it('removes field from fields and from every card values map', () => {
+    const b = makeBoard();
+    ops.deleteField(b, 'Owner');
+    expect(b.fields.find(f => f.name === 'Owner')).toBeUndefined();
+    expect(b.cards[0].values.Owner).toBeUndefined();
+  });
+  it('clears sort + group in every view that referenced it', () => {
+    const b = makeBoard({
+      views: [
+        { name: 'table', sort: { field: 'Owner', dir: 'asc' }, groupBy: 'Owner', widths: { Owner: 100 } },
+        { name: 'kanban' },
+      ],
+    });
+    ops.deleteField(b, 'Owner');
+    const tableView = b.views.find(v => v.name === 'table');
+    expect(tableView?.sort).toBeUndefined();
+    expect(tableView?.groupBy).toBeUndefined();
+    expect(tableView?.widths?.Owner).toBeUndefined();
+  });
+});

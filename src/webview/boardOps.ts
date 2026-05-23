@@ -1,0 +1,82 @@
+import type { Board, ViewDef } from './boardModel';
+
+function ensureView(board: Board, viewName: string): ViewDef {
+  let v = board.views.find(x => x.name === viewName);
+  if (!v) {
+    v = { name: viewName };
+    board.views.push(v);
+  }
+  return v;
+}
+
+/** Drop a view from the array if it now has only the `name` key and nothing else meaningful. */
+function pruneView(board: Board, viewName: string): void {
+  const idx = board.views.findIndex(x => x.name === viewName);
+  if (idx < 0) return;
+  const v = board.views[idx];
+  const empty = !v.columns && !v.hidden && !v.sort && !v.groupBy && !v.widths && !v.extras;
+  if (empty) board.views.splice(idx, 1);
+}
+
+export function setViewSort(
+  board: Board,
+  viewName: string,
+  sort: { field: string; dir: 'asc' | 'desc' } | null,
+): void {
+  const v = ensureView(board, viewName);
+  if (sort) v.sort = sort;
+  else      delete v.sort;
+  pruneView(board, viewName);
+}
+
+export function setViewGroup(board: Board, viewName: string, groupBy: string | null): void {
+  const v = ensureView(board, viewName);
+  if (groupBy) v.groupBy = groupBy;
+  else         delete v.groupBy;
+  pruneView(board, viewName);
+}
+
+export function setViewWidth(
+  board: Board,
+  viewName: string,
+  field: string,
+  px: number | null,
+): void {
+  const v = ensureView(board, viewName);
+  if (!v.widths) v.widths = {};
+  if (px === null) delete v.widths[field];
+  else             v.widths[field] = px;
+  if (v.widths && Object.keys(v.widths).length === 0) delete v.widths;
+  pruneView(board, viewName);
+}
+
+export function hideFieldInView(board: Board, viewName: string, field: string): void {
+  const v = ensureView(board, viewName);
+  v.hidden = Array.from(new Set([...(v.hidden ?? []), field]));
+  pruneView(board, viewName);
+}
+
+export function showFieldInView(board: Board, viewName: string, field: string): void {
+  const v = board.views.find(x => x.name === viewName);
+  if (!v?.hidden) return;
+  v.hidden = v.hidden.filter(n => n !== field);
+  if (v.hidden.length === 0) delete v.hidden;
+  pruneView(board, viewName);
+}
+
+export function deleteField(board: Board, field: string): void {
+  board.fields = board.fields.filter(f => f.name !== field);
+  for (const card of board.cards) delete card.values[field];
+  // Clean every view that referenced this field.
+  for (const v of board.views) {
+    if (v.columns) v.columns = v.columns.filter(n => n !== field);
+    if (v.hidden)  v.hidden  = v.hidden.filter(n => n !== field);
+    if (v.sort?.field    === field) delete v.sort;
+    if (v.groupBy        === field) delete v.groupBy;
+    if (v.widths?.[field] !== undefined) delete v.widths[field];
+  }
+  // After cleanup, prune empty views.
+  board.views = board.views.filter(v =>
+    v.columns || v.hidden || v.sort || v.groupBy || v.widths || v.extras,
+  );
+}
