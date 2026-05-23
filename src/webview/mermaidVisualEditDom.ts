@@ -1813,6 +1813,16 @@ function buildContextTip(handlers: ContextTipHandlers): ContextTipHandle {
   );
 
   // Single-popover policy: opening any popover auto-closes the others.
+  // We sync `aria-expanded` on every trigger button after each open/close so
+  // assistive tech announces the change.
+  function syncAriaExpanded(): void {
+    const triggers = el.querySelectorAll<HTMLElement>('[aria-haspopup="true"]');
+    for (const trig of Array.from(triggers)) {
+      const sib = trig.parentElement?.querySelector<HTMLElement>('.mb-vCtx-menu, .mb-vCtx-morepop, .mb-vCtx-bigpop');
+      const open = !!sib && !sib.classList.contains('mb-hidden');
+      trig.setAttribute('aria-expanded', open ? 'true' : 'false');
+    }
+  }
   el.addEventListener('click', (e) => {
     const t = e.target as Element;
     if (!t) return;
@@ -1824,7 +1834,23 @@ function buildContextTip(handlers: ContextTipHandlers): ContextTipHandle {
     for (const p of Array.from(allPops)) {
       if (p !== ownPop) p.classList.add('mb-hidden');
     }
+    // Defer to after the opener's own click handler toggles its popover.
+    setTimeout(syncAriaExpanded, 0);
   }, true);
+  // Escape closes any open popover and returns focus to the tip root.
+  el.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+      const allPops = el.querySelectorAll<HTMLElement>('.mb-vCtx-menu, .mb-vCtx-morepop, .mb-vCtx-bigpop');
+      let any = false;
+      for (const p of Array.from(allPops)) {
+        if (!p.classList.contains('mb-hidden')) { p.classList.add('mb-hidden'); any = true; }
+      }
+      if (any) {
+        e.stopPropagation();
+        syncAriaExpanded();
+      }
+    }
+  });
 
   function showBelow(node: Element, host: HTMLElement): void {
     const nodeRect = node.getBoundingClientRect();
@@ -2520,6 +2546,8 @@ function buildResizeOverlay(handlers: {
     h.className = 'mb-vResize-handle';
     h.dataset.pos = pos;
     h.title = 'Drag to resize';
+    h.setAttribute('aria-label', `Resize handle (${pos})`);
+    h.setAttribute('role', 'button');
     el.appendChild(h);
     handleByPos.set(pos, h);
   }
@@ -2774,6 +2802,8 @@ function makeShapePicker(
   btn.type = 'button';
   btn.className = 'mb-vCtx-btn mb-vCtx-shapetrigger';
   btn.setAttribute('aria-label', 'Change shape');
+  btn.setAttribute('aria-haspopup', 'true');
+  btn.setAttribute('aria-expanded', 'false');
   btn.title = 'Change shape';
   btn.innerHTML = shapeIconSvg('rect');
 
@@ -2800,6 +2830,7 @@ function makeShapePicker(
     b.dataset.shape = shape;
     b.title = label;
     b.setAttribute('aria-label', label);
+    b.setAttribute('aria-pressed', 'false');
     b.innerHTML = shapeIconSvg(shape);
     b.addEventListener('mousedown', (e) => { e.preventDefault(); e.stopPropagation(); });
     b.addEventListener('click', (e) => {
@@ -2815,6 +2846,7 @@ function makeShapePicker(
   btn.addEventListener('click', (e) => {
     e.preventDefault(); e.stopPropagation();
     menu.classList.toggle('mb-hidden');
+    btn.setAttribute('aria-expanded', menu.classList.contains('mb-hidden') ? 'false' : 'true');
   });
 
   wrap.append(btn, menu);
@@ -2823,7 +2855,11 @@ function makeShapePicker(
     menu,
     setShape(shape) {
       btn.innerHTML = shapeIconSvg(shape);
-      for (const [s, b] of buttons) b.classList.toggle('mb-vCtx-shapebtn-on', s === shape);
+      for (const [s, b] of buttons) {
+        const on = s === shape;
+        b.classList.toggle('mb-vCtx-shapebtn-on', on);
+        b.setAttribute('aria-pressed', on ? 'true' : 'false');
+      }
     },
   };
 }
@@ -2897,6 +2933,8 @@ function makeColorPopover(cfg: ColorPopoverConfig): {
   btn.type = 'button';
   btn.className = `mb-vCtx-btn mb-vCtx-pillbtn ${cfg.iconClass ?? ''}`;
   btn.setAttribute('aria-label', cfg.ariaLabel);
+  btn.setAttribute('aria-haspopup', 'true');
+  btn.setAttribute('aria-expanded', 'false');
   btn.title = cfg.tooltip;
   if (cfg.iconHTML) btn.innerHTML = cfg.iconHTML;
   else              btn.textContent = cfg.glyph ?? '';
@@ -2952,6 +2990,7 @@ function makeColorPopover(cfg: ColorPopoverConfig): {
   noColorBtn.type = 'button';
   noColorBtn.className = 'mb-vCtx-nocolor';
   noColorBtn.title = 'No color';
+  noColorBtn.setAttribute('aria-label', 'Clear color');
   noColorBtn.innerHTML = `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><line x1="5" y1="5" x2="19" y2="19"/></svg><span>No color</span>`;
   noColorBtn.addEventListener('mousedown', (e) => { e.preventDefault(); e.stopPropagation(); });
   noColorBtn.addEventListener('click', (e) => {
@@ -2971,6 +3010,7 @@ function makeColorPopover(cfg: ColorPopoverConfig): {
   btn.addEventListener('click', (e) => {
     e.preventDefault(); e.stopPropagation();
     pop.classList.toggle('mb-hidden');
+    btn.setAttribute('aria-expanded', pop.classList.contains('mb-hidden') ? 'false' : 'true');
   });
 
   wrap.append(btn, pop);
@@ -3075,6 +3115,8 @@ function makeTypeStylePopover(
   btn.type = 'button';
   btn.className = 'mb-vCtx-btn mb-vCtx-typetrigger';
   btn.setAttribute('aria-label', 'Text style');
+  btn.setAttribute('aria-haspopup', 'true');
+  btn.setAttribute('aria-expanded', 'false');
   btn.title = 'Bold / italic / underline / strike';
   btn.innerHTML = `<span style="font-weight:700;text-decoration:underline">B</span>`;
 
@@ -3098,12 +3140,14 @@ function makeTypeStylePopover(
     b.className = 'mb-vCtx-typebtn mb-vCtx-typeglyph';
     b.title = label;
     b.setAttribute('aria-label', label);
+    b.setAttribute('aria-pressed', 'false');
     b.innerHTML = `<span style="${style}">${glyph}</span>`;
     b.addEventListener('mousedown', (e) => { e.preventDefault(); e.stopPropagation(); });
     b.addEventListener('click', (e) => {
       e.preventDefault(); e.stopPropagation();
       state[key] = !state[key];
       b.classList.toggle('mb-vCtx-typebtn-on', state[key]);
+      b.setAttribute('aria-pressed', state[key] ? 'true' : 'false');
       onChange({ [key]: state[key] } as Partial<TypeStyleState>);
     });
     buttons.set(key, b);
@@ -3115,6 +3159,7 @@ function makeTypeStylePopover(
   btn.addEventListener('click', (e) => {
     e.preventDefault(); e.stopPropagation();
     pop.classList.toggle('mb-hidden');
+    btn.setAttribute('aria-expanded', pop.classList.contains('mb-hidden') ? 'false' : 'true');
   });
 
   wrap.append(btn, pop);
@@ -3123,7 +3168,11 @@ function makeTypeStylePopover(
     el: wrap,
     setState(s) {
       Object.assign(state, s);
-      for (const [k, b] of buttons) b.classList.toggle('mb-vCtx-typebtn-on', !!state[k]);
+      for (const [k, b] of buttons) {
+        const on = !!state[k];
+        b.classList.toggle('mb-vCtx-typebtn-on', on);
+        b.setAttribute('aria-pressed', on ? 'true' : 'false');
+      }
       // Trigger button reflects whether any text style is on.
       const anyOn = state.bold || state.italic || state.underline || state.strike;
       btn.classList.toggle('mb-vCtx-typetrigger-on', anyOn);
@@ -3152,6 +3201,8 @@ function makeAlignmentPopover(
   btn.type = 'button';
   btn.className = 'mb-vCtx-btn mb-vCtx-aligntrigger';
   btn.setAttribute('aria-label', 'Alignment');
+  btn.setAttribute('aria-haspopup', 'true');
+  btn.setAttribute('aria-expanded', 'false');
   btn.title = 'Alignment';
   // Three horizontal lines glyph.
   btn.innerHTML = `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><line x1="4" y1="7"  x2="20" y2="7"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="17" x2="20" y2="17"/></svg>`;
@@ -3182,6 +3233,7 @@ function makeAlignmentPopover(
     b.className = 'mb-vCtx-alignbtn';
     b.title = label;
     b.setAttribute('aria-label', label);
+    b.setAttribute('aria-pressed', 'false');
     b.innerHTML = glyph;
     b.addEventListener('mousedown', (e) => { e.preventDefault(); e.stopPropagation(); });
     b.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); onChange({ textAlign: val }); });
@@ -3204,6 +3256,7 @@ function makeAlignmentPopover(
     b.className = 'mb-vCtx-alignbtn';
     b.title = label;
     b.setAttribute('aria-label', label);
+    b.setAttribute('aria-pressed', 'false');
     b.innerHTML = glyph;
     b.addEventListener('mousedown', (e) => { e.preventDefault(); e.stopPropagation(); });
     b.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); onChange({ verticalAlign: val }); });
@@ -3241,14 +3294,23 @@ function makeAlignmentPopover(
   btn.addEventListener('click', (e) => {
     e.preventDefault(); e.stopPropagation();
     pop.classList.toggle('mb-hidden');
+    btn.setAttribute('aria-expanded', pop.classList.contains('mb-hidden') ? 'false' : 'true');
   });
 
   wrap.append(btn, pop);
   return {
     el: wrap,
     setState(s) {
-      for (const [k, b] of hButtons) b.classList.toggle('mb-vCtx-alignbtn-on', k === s.textAlign);
-      for (const [k, b] of vButtons) b.classList.toggle('mb-vCtx-alignbtn-on', k === s.verticalAlign);
+      for (const [k, b] of hButtons) {
+        const on = k === s.textAlign;
+        b.classList.toggle('mb-vCtx-alignbtn-on', on);
+        b.setAttribute('aria-pressed', on ? 'true' : 'false');
+      }
+      for (const [k, b] of vButtons) {
+        const on = k === s.verticalAlign;
+        b.classList.toggle('mb-vCtx-alignbtn-on', on);
+        b.setAttribute('aria-pressed', on ? 'true' : 'false');
+      }
       padRow.setValue(s.padding);
       lhRow.setValue(s.lineHeight);
     },
@@ -3263,6 +3325,7 @@ function makeSegRow<T extends string>(
 ): { el: HTMLElement; setValue: (v: T) => void } {
   const row = document.createElement('div');
   row.className = 'mb-vCtx-segrow';
+  row.setAttribute('role', 'radiogroup');
   const buttons = new Map<T, HTMLButtonElement>();
   for (const [value, label] of options) {
     const b = document.createElement('button');
@@ -3271,6 +3334,9 @@ function makeSegRow<T extends string>(
     b.dataset.value = value;
     b.title = label;
     b.textContent = label;
+    b.setAttribute('aria-label', label);
+    b.setAttribute('role', 'radio');
+    b.setAttribute('aria-checked', 'false');
     b.addEventListener('mousedown', (e) => { e.preventDefault(); e.stopPropagation(); });
     b.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); onPick(value); });
     buttons.set(value, b);
@@ -3279,7 +3345,11 @@ function makeSegRow<T extends string>(
   return {
     el: row,
     setValue(v) {
-      for (const [k, b] of buttons) b.classList.toggle('mb-vCtx-segbtn-on', k === v);
+      for (const [k, b] of buttons) {
+        const on = k === v;
+        b.classList.toggle('mb-vCtx-segbtn-on', on);
+        b.setAttribute('aria-checked', on ? 'true' : 'false');
+      }
     },
   };
 }
@@ -3940,6 +4010,24 @@ function redrawEdge(pathEl: SVGPathElement, fromId: string, toId: string, host: 
   const aEdge = shrinkToNodeEdge(aCenter, aHalf, bCenter);
   const bEdge = shrinkToNodeEdge(bCenter, bHalf, aCenter);
   pathEl.setAttribute('d', bezierPath(aEdge, bEdge));
+
+  // Mermaid renders each edge's label as a sibling <g.edgeLabel> inside
+  // g.edgeLabels, in the same document order as g.edgePaths > path. Moving
+  // the path leaves the label stranded at its original midpoint, so we
+  // re-translate the label to the new path midpoint.
+  const edgePaths = pathEl.parentElement;
+  const edgeLabels = host.querySelector<SVGGElement>('g.edgeLabels');
+  if (!edgePaths || !edgeLabels) return;
+  const idx = Array.from(edgePaths.querySelectorAll<SVGPathElement>(':scope > path')).indexOf(pathEl);
+  if (idx < 0) return;
+  const label = edgeLabels.querySelectorAll<SVGGElement>(':scope > g.edgeLabel')[idx];
+  if (!label) return;
+  try {
+    const len = pathEl.getTotalLength();
+    if (!isFinite(len) || len <= 0) return;
+    const mid = pathEl.getPointAtLength(len / 2);
+    label.setAttribute('transform', `translate(${mid.x}, ${mid.y})`);
+  } catch { /* path with empty d throws — ignore */ }
 }
 
 /** Half-extents (w/2, h/2) of a mermaid node's bbox. Mermaid centers shapes
