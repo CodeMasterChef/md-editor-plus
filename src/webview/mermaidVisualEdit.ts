@@ -93,13 +93,24 @@ export type EdgeStyleMap = Record<string, EdgeStyle>;
 
 /** Standalone "free" line — not connected to any node. Used as a separator,
     pointer, or annotation. Coordinates are in the rendered mermaid SVG's
-    viewBox space (same coordinate system as `PositionMap`). */
+    viewBox space (same coordinate system as `PositionMap`).
+
+    Each endpoint can be either a free SVG coordinate, or anchored to a node's
+    hook (one of N/E/S/W on the node's bounding box). Anchored endpoints
+    "stick" — they follow the node as it moves or resizes.
+
+    `lastX`/`lastY` is a fallback: when an anchored endpoint's target node is
+    deleted, the resolver falls back to these coordinates so the line stays
+    visible. They mirror the last-rendered resolved position; the renderer
+    keeps them up to date so a fallback is always a sensible value. */
+export type LineEndpoint =
+  | { kind: 'free'; x: number; y: number }
+  | { kind: 'node'; id: string; side: 'n' | 'e' | 's' | 'w'; lastX?: number; lastY?: number };
+
 export interface LineDecl {
   id:         string;
-  x1:         number;
-  y1:         number;
-  x2:         number;
-  y2:         number;
+  from:       LineEndpoint;
+  to:         LineEndpoint;
   color?:     string;
   thickness?: number;
   type?:      'solid' | 'dashed' | 'dotted';
@@ -538,18 +549,38 @@ export function deleteEdgeByKey(ast: Ast, key: string): void {
 }
 
 // ── Standalone lines sidecar ───────────────────────────────────────────────
-// `%% mb-lines: [{ id: "L1", x1: 100, y1: 50, x2: 300, y2: 80, color: "#1f2937", thickness: 1.5, type: "solid" }]`
+// New shape (current):
+//   `%% mb-lines: [{ id: "L1",
+//                    from: { kind: "free", x: 100, y: 50 },
+//                    to:   { kind: "node", id: "A", side: "e", lastX: 250, lastY: 80 },
+//                    color: "#1f2937", thickness: 1.5, type: "solid" }]`
+//
+// Legacy shape (still read for back-compat — converted on parse):
+//   `%% mb-lines: [{ id: "L1", x1: 100, y1: 50, x2: 300, y2: 80, ... }]`
 //
 // Stored as an array (not a keyed map like the others) because lines have no
 // natural "key" — they aren't tied to a node id and there's no equivalent of
 // edge from/to. We use `id` so style edits and deletions can target a specific
-// line without ambiguity.
+// line without ambiguity. Each endpoint can be `free` (raw coords) or `node`
+// (anchored to a hook on N/E/S/W of a node; follows the node as it moves).
 
 export function getLines(ast: Ast): LineDecl[] {
   for (const line of ast.lines) {
     if (line.kind === 'lines') return line.lines;
   }
   return [];
+}
+
+function normalizeEndpoint(e: LineEndpoint): LineEndpoint {
+  if (e.kind === 'free') {
+    return { kind: 'free', x: Math.round(e.x), y: Math.round(e.y) };
+  }
+  // Anchored. Only include `lastX/lastY` (rounded) when present, so the
+  // sidecar stays terse for newly-created anchored lines.
+  const out: LineEndpoint = { kind: 'node', id: e.id, side: e.side };
+  if (typeof e.lastX === 'number') out.lastX = Math.round(e.lastX);
+  if (typeof e.lastY === 'number') out.lastY = Math.round(e.lastY);
+  return out;
 }
 
 function writeLinesLine(ast: Ast, lines: LineDecl[]): void {
@@ -560,11 +591,9 @@ function writeLinesLine(ast: Ast, lines: LineDecl[]): void {
   }
   const filtered: LineDecl[] = lines.map(l => {
     const out: LineDecl = {
-      id: l.id,
-      x1: Math.round(l.x1),
-      y1: Math.round(l.y1),
-      x2: Math.round(l.x2),
-      y2: Math.round(l.y2),
+      id:   l.id,
+      from: normalizeEndpoint(l.from),
+      to:   normalizeEndpoint(l.to),
     };
     if (l.color     !== undefined) out.color     = l.color;
     if (l.thickness !== undefined) out.thickness = l.thickness;
@@ -594,6 +623,18 @@ function writeLinesLine(ast: Ast, lines: LineDecl[]): void {
 
 export function setLines(ast: Ast, lines: LineDecl[]): void {
   writeLinesLine(ast, lines);
+}
+
+/** Data-only endpoint fallback used by tests and pure-data code paths.
+    For anchored endpoints this returns `lastX/lastY` if present (snapshot
+    from the last render), otherwise null. The DOM layer has a richer
+    resolver that uses live node positions. */
+export function endpointFallbackCoords(e: LineEndpoint): { x: number; y: number } | null {
+  if (e.kind === 'free') return { x: e.x, y: e.y };
+  if (typeof e.lastX === 'number' && typeof e.lastY === 'number') {
+    return { x: e.lastX, y: e.lastY };
+  }
+  return null;
 }
 
 export function addLine(ast: Ast, line: Omit<LineDecl, 'id'>): LineDecl {
@@ -681,7 +722,28 @@ function tryParseEdgeStylesLine(trimmed: string): EdgeStyleMap | null {
   }
 }
 
-// `%% mb-lines: [{ "id": "L1", "x1": 0, "y1": 0, "x2": 10, "y2": 10, ... }]`
+// `%% mb-lines: [{ "id": "L1", "from": {...}, "to": {...}, ... }]`
+//
+// Accepts both the new endpoint form (`from`/`to` objects) and the legacy
+// flat form (`x1`/`y1`/`x2`/`y2` numbers). Legacy pairs become two `free`
+// endpoints — same coords, no anchor — so old sidecars keep round-tripping.
+function tryParseEndpoint(v: unknown): LineEndpoint | null {
+  if (!v || typeof v !== 'object') return null;
+  const s = v as Record<string, unknown>;
+  if (s.kind === 'node' && typeof s.id === 'string'
+      && (s.side === 'n' || s.side === 'e' || s.side === 's' || s.side === 'w')) {
+    const out: LineEndpoint = { kind: 'node', id: s.id, side: s.side };
+    if (typeof s.lastX === 'number') out.lastX = s.lastX;
+    if (typeof s.lastY === 'number') out.lastY = s.lastY;
+    return out;
+  }
+  if ((s.kind === 'free' || s.kind === undefined)
+      && typeof s.x === 'number' && typeof s.y === 'number') {
+    return { kind: 'free', x: s.x, y: s.y };
+  }
+  return null;
+}
+
 function tryParseLinesLine(trimmed: string): LineDecl[] | null {
   const m = trimmed.match(/^%%\s*mb-lines:\s*(.+)$/);
   if (!m) return null;
@@ -693,11 +755,20 @@ function tryParseLinesLine(trimmed: string): LineDecl[] | null {
       if (!v || typeof v !== 'object') continue;
       const s = v as Record<string, unknown>;
       if (typeof s.id !== 'string') continue;
-      if (typeof s.x1 !== 'number' || typeof s.y1 !== 'number'
-       || typeof s.x2 !== 'number' || typeof s.y2 !== 'number') continue;
-      const entry: LineDecl = {
-        id: s.id, x1: s.x1, y1: s.y1, x2: s.x2, y2: s.y2,
-      };
+      let from: LineEndpoint | null = null;
+      let to:   LineEndpoint | null = null;
+      // New form.
+      if (s.from !== undefined && s.to !== undefined) {
+        from = tryParseEndpoint(s.from);
+        to   = tryParseEndpoint(s.to);
+      } else if (typeof s.x1 === 'number' && typeof s.y1 === 'number'
+              && typeof s.x2 === 'number' && typeof s.y2 === 'number') {
+        // Legacy flat form — convert each pair to a free endpoint.
+        from = { kind: 'free', x: s.x1, y: s.y1 };
+        to   = { kind: 'free', x: s.x2, y: s.y2 };
+      }
+      if (!from || !to) continue;
+      const entry: LineDecl = { id: s.id, from, to };
       if (typeof s.color     === 'string') entry.color     = s.color;
       if (typeof s.thickness === 'number') entry.thickness = s.thickness;
       if (s.type === 'solid' || s.type === 'dashed' || s.type === 'dotted') entry.type = s.type;

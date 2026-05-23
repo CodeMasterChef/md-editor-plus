@@ -4267,6 +4267,27 @@ html.theme-dark .ProseMirror .mb-vTb-grid.mb-vTb-active {
 .ProseMirror line.mb-vLineDraft {
   pointer-events: none;
 }
+/* Endpoint handles on the selected line — small white circles with a blue
+   ring, matching the connection-point dots' visual language. They paint
+   above the line so users can grab them precisely. */
+.ProseMirror g.mb-vLineHandles circle.mb-vLine-handle {
+  fill: #ffffff;
+  stroke: #6366f1;
+  stroke-width: 1.5;
+  cursor: grab;
+  pointer-events: all;
+}
+.ProseMirror g.mb-vLineHandles circle.mb-vLine-handle:hover {
+  fill: #6366f1;
+}
+.ProseMirror.mb-line-drag-active g.mb-vLineHandles circle.mb-vLine-handle {
+  cursor: grabbing;
+}
+/* When the user is dragging an endpoint or body, hide our line tip so it
+   doesn't follow the cursor into a frenzy. */
+.ProseMirror.mb-line-drag-active .mb-vLineTip {
+  display: none !important;
+}
 /* Show a crosshair cursor over the canvas when the Line tool is active. */
 .ProseMirror .mb-tool-line,
 .ProseMirror .mb-tool-line .mb-svg-host,

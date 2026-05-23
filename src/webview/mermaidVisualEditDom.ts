@@ -17,7 +17,7 @@ import {
   getStyles, getNodeStyle, setNodeStyle, NodeStyle, StyleMap,
   getEdgeStyles, getEdgeStyle, setEdgeStyle, deleteEdgeByKey, edgeKey,
   EdgeStyle, EdgeCap, EdgeAnimation, EdgeAnimationDirection,
-  getLines, addLine, updateLineById, deleteLineById, LineDecl,
+  getLines, setLines, addLine, updateLineById, deleteLineById, LineDecl, LineEndpoint,
 } from './mermaidVisualEdit';
 
 export type Tool = 'select' | 'pan' | 'rect' | 'pill' | 'circle' | 'diamond' | 'arrow' | 'line' | 'text' | 'sticky';
@@ -202,6 +202,7 @@ export function createVisualEditor(opts: VisualEditorOptions): VisualEditorHandl
       resizeOverlay.positionAround(el, opts.previewPane);
       // Edges anchored on this node need to track its new visual extent.
       recomputeEdgesTouching(id, opts.previewPane);
+      recomputeLinesTouching(id, opts.previewPane);
     },
     onResizeEnd: (id, sx, sy) => {
       mutate((ast) => { setNodeStyle(ast, id, { scale: [sx, sy] }); });
@@ -391,6 +392,11 @@ export function createVisualEditor(opts: VisualEditorOptions): VisualEditorHandl
     // Clicks on our own overlay chrome (resize handles, edge tip, context
     // tip, etc.) shouldn't fall through to selection/edge hit-testing.
     if ((e.target as Element).closest?.('.mb-vResize, .mb-vCtx, .mb-vEdgeCtx2, .mb-vTb, .mb-vConn, .mb-vZoom, .mb-vLineTip')) {
+      return;
+    }
+    // Same for the line endpoint handles — clicking one shouldn't deselect
+    // the line. (A drag that started on a handle already swallows mouseup.)
+    if ((e.target as Element).closest?.('circle.mb-vLine-handle')) {
       return;
     }
 
@@ -696,6 +702,7 @@ export function createVisualEditor(opts: VisualEditorOptions): VisualEditorHandl
     const ny = cur.y + dy;
     nodeEl.setAttribute('transform', `translate(${nx}, ${ny})`);
     recomputeEdgesTouching(selectedId, opts.previewPane);
+    recomputeLinesTouching(selectedId, opts.previewPane);
     positionRingAround(selectionRing, nodeEl, opts.previewPane);
     contextTip.showBelow(nodeEl, opts.previewPane);
     nudgeAcc = { id: selectedId, x: nx, y: ny };
@@ -893,11 +900,15 @@ export function createVisualEditor(opts: VisualEditorOptions): VisualEditorHandl
     scale:     number;
     moved:     boolean;
   }
-  // Four mutually-exclusive gestures share the mouse:
-  //  - drag       : node reposition (single or multi)
-  //  - marquee    : drag on empty canvas → multi-select
-  //  - edge       : drag from a connection-point dot → new edge
-  //  - lineDraft  : Line tool — drag on canvas → free-form straight line
+  // Mutually-exclusive gestures sharing the mouse:
+  //  - drag           : node reposition (single or multi)
+  //  - marquee        : drag on empty canvas → multi-select
+  //  - edgeDraft      : drag from a connection-point dot → new edge
+  //  - lineDraft      : Line tool — drag on canvas → free-form straight line
+  //  - lineHandleDrag : drag one endpoint of a selected free line; may snap
+  //                     to a node hook on release
+  //  - lineBodyDrag   : drag the body of a selected free line to translate
+  //                     both endpoints (anchored endpoints get dropped → free)
   let drag: DragCandidate | null = null;
   let marquee: { x1: number; y1: number; x2: number; y2: number; additive: boolean } | null = null;
   let edgeDraft: {
@@ -916,6 +927,32 @@ export function createVisualEditor(opts: VisualEditorOptions): VisualEditorHandl
     endX:   number;
     endY:   number;
     el:     SVGLineElement | null;
+  } | null = null;
+  // Phase 11: drag a single endpoint of the selected line. We mutate the
+  // live SVG line during the gesture and only persist on mouseup so we
+  // don't create one undo step per pixel.
+  let lineHandleDrag: {
+    lineId:        string;
+    end:           'from' | 'to';
+    fixedX:        number;       // the OTHER endpoint, in SVG coords
+    fixedY:        number;
+    moved:         boolean;
+    startScreenX:  number;
+    startScreenY:  number;
+    currentTarget: string | null;  // id of node currently hovered for snap
+  } | null = null;
+  // Phase 11: drag the line body. Both endpoints translate by the cursor
+  // delta. Anchored endpoints get dropped per the Miro-style spec
+  // (deliberate body drag detaches anchors).
+  let lineBodyDrag: {
+    lineId:        string;
+    startScreenX:  number;
+    startScreenY:  number;
+    fromOriginX:   number;        // resolved origin coords at gesture start
+    fromOriginY:   number;
+    toOriginX:     number;
+    toOriginY:     number;
+    moved:         boolean;
   } | null = null;
   let pan: { startX: number; startY: number; originTx: number; originTy: number } | null = null;
   let spaceHeld = false;
@@ -957,6 +994,63 @@ export function createVisualEditor(opts: VisualEditorOptions): VisualEditorHandl
     }
 
     if (activeTool !== 'select') return;
+
+    // Free-line endpoint handle → start endpoint drag. Highest priority on
+    // mousedown because the handle visually sits over both the line body and
+    // any node it's anchored to.
+    const handleEl = (e.target as Element).closest?.('circle.mb-vLine-handle') as SVGCircleElement | null;
+    if (handleEl && selectedLineId && handleEl.dataset.lineId === selectedLineId) {
+      const ast = parseMermaid(opts.getSource());
+      const line = getLines(ast).find(l => l.id === selectedLineId);
+      if (line) {
+        const end = (handleEl.dataset.end === 'to' ? 'to' : 'from') as 'from' | 'to';
+        const fixed = resolveLineEndpoint(end === 'from' ? line.to : line.from, opts.previewPane);
+        if (fixed) {
+          lineHandleDrag = {
+            lineId:        line.id,
+            end,
+            fixedX:        fixed.x,
+            fixedY:        fixed.y,
+            moved:         false,
+            startScreenX:  e.clientX,
+            startScreenY:  e.clientY,
+            currentTarget: null,
+          };
+          opts.previewPane.classList.add('mb-line-drag-active');
+          e.preventDefault();
+          e.stopPropagation();
+          return;
+        }
+      }
+    }
+
+    // Free-line BODY → start body drag (translate both endpoints, dropping
+    // any anchors). The line itself is the hit target (pointer-events:stroke).
+    const lineHitEl = (e.target as Element).closest?.('line.mb-vLine') as SVGLineElement | null;
+    if (lineHitEl && lineHitEl.dataset.lineId && selectedLineId === lineHitEl.dataset.lineId) {
+      const ast = parseMermaid(opts.getSource());
+      const line = getLines(ast).find(l => l.id === selectedLineId);
+      if (line) {
+        const a = resolveLineEndpoint(line.from, opts.previewPane);
+        const b = resolveLineEndpoint(line.to,   opts.previewPane);
+        if (a && b) {
+          lineBodyDrag = {
+            lineId:       line.id,
+            startScreenX: e.clientX,
+            startScreenY: e.clientY,
+            fromOriginX:  a.x,
+            fromOriginY:  a.y,
+            toOriginX:    b.x,
+            toOriginY:    b.y,
+            moved:        false,
+          };
+          opts.previewPane.classList.add('mb-line-drag-active');
+          e.preventDefault();
+          e.stopPropagation();
+          return;
+        }
+      }
+    }
 
     // Connection-point dot → start edge draft. The source hook is the dot
     // the user grabbed (not the node center), so the line emerges cleanly
@@ -1055,6 +1149,101 @@ export function createVisualEditor(opts: VisualEditorOptions): VisualEditorHandl
       lineDraft.el.setAttribute('y2', String(lineDraft.endY));
       return;
     }
+    // Line endpoint drag — move one end of the selected line. Snap to a
+    // node hook when hovering, otherwise free-flow under the cursor.
+    if (lineHandleDrag) {
+      const svgPt = clientToSvgPoint(e.clientX, e.clientY, opts.previewPane);
+      if (!svgPt) return;
+      const dxScreen = e.clientX - lineHandleDrag.startScreenX;
+      const dyScreen = e.clientY - lineHandleDrag.startScreenY;
+      if (!lineHandleDrag.moved && Math.hypot(dxScreen, dyScreen) < DRAG_THRESHOLD) return;
+      lineHandleDrag.moved = true;
+
+      // Hover detection for snap target. elementFromPoint is more reliable
+      // than e.target — during a drag, the target gets stuck on the handle.
+      const hit       = elementAtPoint(e.clientX, e.clientY, opts.previewPane);
+      const hitTarget = findMermaidNode(hit, opts.previewPane);
+      const newTargetId = hitTarget?.id ?? null;
+
+      // Update highlight class + the floating hook indicators on the target.
+      if (newTargetId !== lineHandleDrag.currentTarget) {
+        if (lineHandleDrag.currentTarget) {
+          const prev = findNodeElementById(lineHandleDrag.currentTarget, opts.previewPane);
+          prev?.classList.remove('mb-vEdgeTarget');
+        }
+        if (newTargetId) {
+          const next = findNodeElementById(newTargetId, opts.previewPane);
+          next?.classList.add('mb-vEdgeTarget');
+        }
+        lineHandleDrag.currentTarget = newTargetId;
+      }
+      if (newTargetId) {
+        const targetEl = findNodeElementById(newTargetId, opts.previewPane);
+        if (targetEl) {
+          const r     = targetEl.getBoundingClientRect();
+          const hRect = opts.previewPane.getBoundingClientRect();
+          targetHooksLayer.style.left   = `${r.left - hRect.left}px`;
+          targetHooksLayer.style.top    = `${r.top  - hRect.top}px`;
+          targetHooksLayer.style.width  = `${r.width}px`;
+          targetHooksLayer.style.height = `${r.height}px`;
+          targetHooksLayer.classList.remove('mb-hidden');
+        }
+      } else {
+        targetHooksLayer.classList.add('mb-hidden');
+      }
+
+      // Compute the live endpoint: snap to closest hook if hovering a node.
+      let endPoint = svgPt;
+      if (newTargetId) {
+        const targetEl = findNodeElementById(newTargetId, opts.previewPane) as SVGGElement | null;
+        const hook = targetEl
+          ? closestHook(targetEl, { x: lineHandleDrag.fixedX, y: lineHandleDrag.fixedY })
+          : null;
+        if (hook) endPoint = hook;
+      }
+
+      // Mutate the visible <line> + handle directly — no AST round-trip while
+      // dragging, so we don't spam the undo stack or re-render mermaid.
+      const lineEl = opts.previewPane.querySelector<SVGLineElement>(
+        `g.mb-vLines > line.mb-vLine[data-line-id="${lineHandleDrag.lineId}"]`);
+      if (lineEl) {
+        const ax = lineHandleDrag.end === 'from' ? endPoint.x : lineHandleDrag.fixedX;
+        const ay = lineHandleDrag.end === 'from' ? endPoint.y : lineHandleDrag.fixedY;
+        const bx = lineHandleDrag.end === 'from' ? lineHandleDrag.fixedX : endPoint.x;
+        const by = lineHandleDrag.end === 'from' ? lineHandleDrag.fixedY : endPoint.y;
+        lineEl.setAttribute('x1', String(ax));
+        lineEl.setAttribute('y1', String(ay));
+        lineEl.setAttribute('x2', String(bx));
+        lineEl.setAttribute('y2', String(by));
+        refreshLineHandles();
+      }
+      return;
+    }
+
+    // Line body drag — translate both endpoints by the cursor delta. Mutate
+    // the live <line> in place; the AST is updated on mouseup.
+    if (lineBodyDrag) {
+      const dxScreen = e.clientX - lineBodyDrag.startScreenX;
+      const dyScreen = e.clientY - lineBodyDrag.startScreenY;
+      if (!lineBodyDrag.moved && Math.hypot(dxScreen, dyScreen) < DRAG_THRESHOLD) return;
+      lineBodyDrag.moved = true;
+      const svg = opts.previewPane.querySelector<SVGSVGElement>('.mb-svg-host svg');
+      if (!svg) return;
+      const unit = svgUnitsPerPixel(svg);
+      const dxSvg = dxScreen * unit;
+      const dySvg = dyScreen * unit;
+      const lineEl = opts.previewPane.querySelector<SVGLineElement>(
+        `g.mb-vLines > line.mb-vLine[data-line-id="${lineBodyDrag.lineId}"]`);
+      if (lineEl) {
+        lineEl.setAttribute('x1', String(lineBodyDrag.fromOriginX + dxSvg));
+        lineEl.setAttribute('y1', String(lineBodyDrag.fromOriginY + dySvg));
+        lineEl.setAttribute('x2', String(lineBodyDrag.toOriginX   + dxSvg));
+        lineEl.setAttribute('y2', String(lineBodyDrag.toOriginY   + dySvg));
+        refreshLineHandles();
+      }
+      return;
+    }
+
     // Edge draft path: while dragging, hover-detect a target node, highlight it,
     // and snap the bezier endpoint to the target's closest hook.
     if (edgeDraft) {
@@ -1172,6 +1361,7 @@ export function createVisualEditor(opts: VisualEditorOptions): VisualEditorHandl
       const ny = m.originY + snapDySvg;
       m.nodeEl.setAttribute('transform', `translate(${nx}, ${ny})`);
       recomputeEdgesTouching(m.id, opts.previewPane);
+      recomputeLinesTouching(m.id, opts.previewPane);
     }
     // Refresh selection rings + tip to follow the moved nodes.
     refreshSelectionUI();
@@ -1208,8 +1398,8 @@ export function createVisualEditor(opts: VisualEditorOptions): VisualEditorHandl
       suppressNextClick = true;
       mutate((ast) => {
         const created = addLine(ast, {
-          x1: draft.startX, y1: draft.startY,
-          x2: draft.endX,   y2: draft.endY,
+          from: { kind: 'free', x: draft.startX, y: draft.startY },
+          to:   { kind: 'free', x: draft.endX,   y: draft.endY   },
           color:     '#1f2937',
           thickness: 1.5,
           type:      'solid',
@@ -1224,6 +1414,89 @@ export function createVisualEditor(opts: VisualEditorOptions): VisualEditorHandl
       e.stopPropagation();
       return;
     }
+    // Line endpoint drag → persist. If the endpoint landed over a node,
+    // anchor to its nearest hook. Otherwise stay free with the cursor
+    // coords. A drag with no movement just falls through as a click on the
+    // handle (no-op).
+    if (lineHandleDrag) {
+      const gesture = lineHandleDrag;
+      lineHandleDrag = null;
+      opts.previewPane.classList.remove('mb-line-drag-active');
+      // Clear hover indicator regardless of outcome.
+      targetHooksLayer.classList.add('mb-hidden');
+      if (gesture.currentTarget) {
+        const prev = findNodeElementById(gesture.currentTarget, opts.previewPane);
+        prev?.classList.remove('mb-vEdgeTarget');
+      }
+      if (!gesture.moved) return;
+      suppressNextClick = true;
+      // Re-derive the target under the cursor at mouseup as a belt-and-braces
+      // check — elementFromPoint can lag during fast drags.
+      const finalTargetId = gesture.currentTarget
+        ?? findMermaidNode(elementAtPoint(e.clientX, e.clientY, opts.previewPane), opts.previewPane)?.id
+        ?? null;
+      const svgPt = clientToSvgPoint(e.clientX, e.clientY, opts.previewPane);
+      mutate((ast) => {
+        const line = getLines(ast).find(l => l.id === gesture.lineId);
+        if (!line) return;
+        let newEndpoint: LineEndpoint;
+        if (finalTargetId) {
+          // Snap to the closest hook of the target.
+          const targetEl = findNodeElementById(finalTargetId, opts.previewPane) as SVGGElement | null;
+          let side: 'n' | 'e' | 's' | 'w' = 'e';
+          let snapped: { x: number; y: number } | null = null;
+          if (targetEl) {
+            const sides: Array<'n' | 'e' | 's' | 'w'> = ['n', 'e', 's', 'w'];
+            let bestD = Infinity;
+            for (const s of sides) {
+              const h = nodeHookPosition(targetEl, s);
+              if (!h) continue;
+              const d = Math.hypot(h.x - gesture.fixedX, h.y - gesture.fixedY);
+              if (d < bestD) { bestD = d; side = s; snapped = h; }
+            }
+          }
+          newEndpoint = {
+            kind: 'node',
+            id:   finalTargetId,
+            side,
+            ...(snapped ? { lastX: snapped.x, lastY: snapped.y } : {}),
+          };
+        } else {
+          newEndpoint = {
+            kind: 'free',
+            x: svgPt?.x ?? gesture.fixedX,
+            y: svgPt?.y ?? gesture.fixedY,
+          };
+        }
+        const partial = gesture.end === 'from' ? { from: newEndpoint } : { to: newEndpoint };
+        updateLineById(ast, gesture.lineId, partial);
+      });
+      e.stopPropagation();
+      return;
+    }
+
+    // Line body drag → persist. Both endpoints become FREE at their new
+    // positions (Miro behavior: a deliberate body drag detaches anchors).
+    if (lineBodyDrag) {
+      const gesture = lineBodyDrag;
+      lineBodyDrag = null;
+      opts.previewPane.classList.remove('mb-line-drag-active');
+      if (!gesture.moved) return;
+      suppressNextClick = true;
+      const svg = opts.previewPane.querySelector<SVGSVGElement>('.mb-svg-host svg');
+      const unit = svg ? svgUnitsPerPixel(svg) : 1;
+      const dxSvg = (e.clientX - gesture.startScreenX) * unit;
+      const dySvg = (e.clientY - gesture.startScreenY) * unit;
+      mutate((ast) => {
+        updateLineById(ast, gesture.lineId, {
+          from: { kind: 'free', x: gesture.fromOriginX + dxSvg, y: gesture.fromOriginY + dySvg },
+          to:   { kind: 'free', x: gesture.toOriginX   + dxSvg, y: gesture.toOriginY   + dySvg },
+        });
+      });
+      e.stopPropagation();
+      return;
+    }
+
     // Edge draft → commit if landed on a node. Prefer the tracked target
     // (set during mousemove via elementFromPoint) since e.target during
     // mouseup can be our draft path or another overlay.
@@ -1469,6 +1742,52 @@ export function createVisualEditor(opts: VisualEditorOptions): VisualEditorHandl
       const isSel = !!selectedLineId && el.dataset.lineId === selectedLineId;
       el.classList.toggle('mb-vLine-selected', isSel);
     }
+    refreshLineHandles();
+  }
+
+  /** Mount / refresh the two endpoint handles for the currently-selected
+   *  line. Handles are <circle> elements that sit in their own SVG group
+   *  so we can paint them above the line. */
+  function refreshLineHandles(): void {
+    const svg = opts.previewPane.querySelector<SVGSVGElement>('.mb-svg-host svg');
+    if (!svg) return;
+    let group = svg.querySelector<SVGGElement>('g.mb-vLineHandles');
+    if (!selectedLineId) {
+      if (group) group.remove();
+      return;
+    }
+    const lineEl = svg.querySelector<SVGLineElement>(`g.mb-vLines > line.mb-vLine[data-line-id="${selectedLineId}"]`);
+    if (!lineEl) {
+      if (group) group.remove();
+      return;
+    }
+    if (!group) {
+      group = document.createElementNS('http://www.w3.org/2000/svg', 'g') as SVGGElement;
+      group.setAttribute('class', 'mb-vLineHandles');
+      svg.appendChild(group);
+    } else {
+      // Move to the end so handles paint above lines + nodes, and clear.
+      svg.appendChild(group);
+      while (group.firstChild) group.removeChild(group.firstChild);
+    }
+    const x1 = parseFloat(lineEl.getAttribute('x1') ?? '0');
+    const y1 = parseFloat(lineEl.getAttribute('y1') ?? '0');
+    const x2 = parseFloat(lineEl.getAttribute('x2') ?? '0');
+    const y2 = parseFloat(lineEl.getAttribute('y2') ?? '0');
+    // Convert "5 px radius in screen space" to SVG units so the handle stays
+    // the same visual size at any zoom level.
+    const unit = svgUnitsPerPixel(svg);
+    const r = 5 * unit;
+    for (const end of (['from', 'to'] as const)) {
+      const c = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+      c.setAttribute('class', 'mb-vLine-handle');
+      c.dataset.lineId = selectedLineId;
+      c.dataset.end    = end;
+      c.setAttribute('cx', String(end === 'from' ? x1 : x2));
+      c.setAttribute('cy', String(end === 'from' ? y1 : y2));
+      c.setAttribute('r',  String(r));
+      group.appendChild(c);
+    }
   }
 
   function showConnectionPoints(nodeEl: Element): void {
@@ -1506,6 +1825,12 @@ export function createVisualEditor(opts: VisualEditorOptions): VisualEditorHandl
     redoStack.length = 0;
     const next = cloneAst(before);
     fn(next);
+    // Refresh `lastX/lastY` for any anchored line endpoint whose target node
+    // currently exists in the DOM. The live DOM reflects the pre-rerender
+    // state — which still has any node the mutation just deleted from the
+    // AST. That gives us one last chance to snapshot the position so the
+    // line keeps something to fall back on.
+    refreshAnchoredLineFallbacks(next, opts.previewPane);
     opts.onSourceChange(serializeMermaid(next));
   }
 
@@ -1604,12 +1929,14 @@ export function createVisualEditor(opts: VisualEditorOptions): VisualEditorHandl
           lineTip.setStyle(found);
           // Park the tip near the midpoint of the line for natural placement.
           const svg = opts.previewPane.querySelector<SVGSVGElement>('.mb-svg-host svg');
-          if (svg) {
+          const a = resolveLineEndpoint(found.from, opts.previewPane);
+          const b = resolveLineEndpoint(found.to,   opts.previewPane);
+          if (svg && a && b) {
             const ctm = svg.getScreenCTM();
             if (ctm) {
               const pt = svg.createSVGPoint();
-              pt.x = (found.x1 + found.x2) / 2;
-              pt.y = (found.y1 + found.y2) / 2;
+              pt.x = (a.x + b.x) / 2;
+              pt.y = (a.y + b.y) / 2;
               const scr = pt.matrixTransform(ctm);
               lineTip.showAt(scr.x, scr.y);
             }
@@ -2839,15 +3166,20 @@ function closestHook(g: SVGGElement, p: { x: number; y: number }): { x: number; 
 function elementAtPoint(clientX: number, clientY: number, host: HTMLElement): Element | null {
   let el = document.elementFromPoint(clientX, clientY) as Element | null;
   while (el && host.contains(el)) {
-    // If we hit our own edge-draft path or a connection dot, look beneath.
+    // If we hit our own edge-draft path, a connection dot, or one of the
+    // line endpoint handles, look beneath so we still see the snap target.
     if (el.classList.contains('mb-vEdgeDraft') ||
         el.classList.contains('mb-vConn-dot')  ||
-        el.classList.contains('mb-vConn')) {
+        el.classList.contains('mb-vConn')      ||
+        el.classList.contains('mb-vLine-handle')) {
       // Temporarily hide pointer events on this element to peek underneath.
-      const prev = (el as HTMLElement).style.pointerEvents;
-      (el as HTMLElement).style.pointerEvents = 'none';
+      // For SVG handles the style isn't directly addressable; using setAttribute
+      // on `pointer-events` works for both HTML + SVG.
+      const prev = el.getAttribute('pointer-events');
+      el.setAttribute('pointer-events', 'none');
       const beneath = document.elementFromPoint(clientX, clientY) as Element | null;
-      (el as HTMLElement).style.pointerEvents = prev;
+      if (prev === null) el.removeAttribute('pointer-events');
+      else               el.setAttribute('pointer-events', prev);
       el = beneath;
       continue;
     }
@@ -3724,6 +4056,34 @@ function makeSegRow<T extends string>(
     same coordinate space and zoom/pan with everything else. We clear and
     rebuild the group on every call to keep state simple (no per-element
     diffing). The cost is trivial since line counts are realistically <50. */
+/** Resolve a `LineEndpoint` to live SVG coords.
+ *
+ * - `free`     → returns the stored coords.
+ * - `node`     → looks up the target node's current SVG position + hook offset.
+ *                If the node has been deleted, falls back to `lastX/lastY` (a
+ *                snapshot from the last successful render, persisted in the
+ *                AST). If even that's missing, returns null.
+ *
+ * Centralized here so both rendering and drag-handle positioning use exactly
+ * the same coordinate system. */
+export function resolveLineEndpoint(
+  e: LineEndpoint,
+  host: HTMLElement,
+): { x: number; y: number; resolvedFromNode: boolean } | null {
+  if (e.kind === 'free') {
+    return { x: e.x, y: e.y, resolvedFromNode: false };
+  }
+  const nodeEl = findNodeElementById(e.id, host) as SVGGElement | null;
+  if (nodeEl) {
+    const hook = nodeHookPosition(nodeEl, e.side);
+    if (hook) return { x: hook.x, y: hook.y, resolvedFromNode: true };
+  }
+  if (typeof e.lastX === 'number' && typeof e.lastY === 'number') {
+    return { x: e.lastX, y: e.lastY, resolvedFromNode: false };
+  }
+  return null;
+}
+
 export function applyStandaloneLinesOverlay(ast: Ast, host: HTMLElement): void {
   const svg = host.querySelector<SVGSVGElement>('.mb-svg-host svg');
   if (!svg) return;
@@ -3743,13 +4103,27 @@ export function applyStandaloneLinesOverlay(ast: Ast, host: HTMLElement): void {
 
   const lines = getLines(ast);
   for (const l of lines) {
+    const a = resolveLineEndpoint(l.from, host);
+    const b = resolveLineEndpoint(l.to,   host);
+    if (!a || !b) continue; // both endpoints orphaned + no fallback → skip
     const el = document.createElementNS('http://www.w3.org/2000/svg', 'line');
     el.setAttribute('class', 'mb-vLine');
     el.dataset.lineId = l.id;
-    el.setAttribute('x1', String(l.x1));
-    el.setAttribute('y1', String(l.y1));
-    el.setAttribute('x2', String(l.x2));
-    el.setAttribute('y2', String(l.y2));
+    // Cache anchor info on the element so DOM-only code (e.g.
+    // recomputeLinesTouching during a node drag) can reposition without
+    // re-parsing the source.
+    if (l.from.kind === 'node') {
+      el.dataset.fromNodeId = l.from.id;
+      el.dataset.fromSide   = l.from.side;
+    }
+    if (l.to.kind === 'node') {
+      el.dataset.toNodeId = l.to.id;
+      el.dataset.toSide   = l.to.side;
+    }
+    el.setAttribute('x1', String(a.x));
+    el.setAttribute('y1', String(a.y));
+    el.setAttribute('x2', String(b.x));
+    el.setAttribute('y2', String(b.y));
     el.setAttribute('stroke', l.color ?? '#1f2937');
     el.setAttribute('stroke-width', String(l.thickness ?? 1.5));
     el.setAttribute('stroke-linecap', 'round');
@@ -3757,6 +4131,67 @@ export function applyStandaloneLinesOverlay(ast: Ast, host: HTMLElement): void {
     else if (l.type === 'dotted') el.setAttribute('stroke-dasharray', '2 4');
     else                          el.setAttribute('stroke-dasharray', '0');
     group.appendChild(el);
+  }
+}
+
+/** Walk the AST's standalone lines; for each anchored endpoint, look up the
+ *  target node in the live DOM and stash its current resolved hook position
+ *  into `lastX/lastY`. This runs from `mutate()` right before serializing,
+ *  so a deletion-style mutation captures the soon-to-be-orphan's position
+ *  one last time before the node is removed from the next render. */
+function refreshAnchoredLineFallbacks(ast: Ast, host: HTMLElement): void {
+  const lines = getLines(ast);
+  if (lines.length === 0) return;
+  let changed = false;
+  const next: LineDecl[] = lines.map(l => {
+    const from = freshenEndpoint(l.from, host);
+    const to   = freshenEndpoint(l.to,   host);
+    if (from === l.from && to === l.to) return l;
+    changed = true;
+    return { ...l, from, to };
+  });
+  if (changed) setLines(ast, next);
+}
+function freshenEndpoint(e: LineEndpoint, host: HTMLElement): LineEndpoint {
+  if (e.kind !== 'node') return e;
+  const nodeEl = findNodeElementById(e.id, host) as SVGGElement | null;
+  if (!nodeEl) return e;
+  const hook = nodeHookPosition(nodeEl, e.side);
+  if (!hook) return e;
+  if (e.lastX === Math.round(hook.x) && e.lastY === Math.round(hook.y)) return e;
+  return { ...e, lastX: hook.x, lastY: hook.y };
+}
+
+/** Live-update any standalone lines whose endpoint is anchored to the given
+ *  node id. Mirrors `recomputeEdgesTouching` but for `g.mb-vLines` children.
+ *  Reads anchor info from data-* attrs cached on each <line>, so it's pure
+ *  DOM and cheap to call from a drag mousemove handler. */
+export function recomputeLinesTouching(id: string, host: HTMLElement): void {
+  const lines = host.querySelectorAll<SVGLineElement>('g.mb-vLines > line.mb-vLine');
+  for (const el of Array.from(lines)) {
+    const touchesFrom = el.dataset.fromNodeId === id;
+    const touchesTo   = el.dataset.toNodeId   === id;
+    if (!touchesFrom && !touchesTo) continue;
+    if (touchesFrom && el.dataset.fromSide) {
+      const nodeEl = findNodeElementById(id, host) as SVGGElement | null;
+      if (nodeEl) {
+        const hook = nodeHookPosition(nodeEl, el.dataset.fromSide as 'n' | 'e' | 's' | 'w');
+        if (hook) {
+          el.setAttribute('x1', String(hook.x));
+          el.setAttribute('y1', String(hook.y));
+        }
+      }
+    }
+    if (touchesTo && el.dataset.toSide) {
+      const nodeEl = findNodeElementById(id, host) as SVGGElement | null;
+      if (nodeEl) {
+        const hook = nodeHookPosition(nodeEl, el.dataset.toSide as 'n' | 'e' | 's' | 'w');
+        if (hook) {
+          el.setAttribute('x2', String(hook.x));
+          el.setAttribute('y2', String(hook.y));
+        }
+      }
+    }
   }
 }
 
