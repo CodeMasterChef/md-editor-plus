@@ -2772,22 +2772,20 @@ html.source-word-wrap #source-view .cb-content {
   cursor: pointer;
 }
 
-/* Eye/Code segmented toggle (left side of the block header). Two pill-
-   shaped buttons inside a single rounded chip; the active one fills with
-   the text color. */
+/* Eye/Code segmented toggle (left side of the block header). Mirrors the
+   plugin's top-of-app .segmented control: soft tray background, the
+   active pill gets the page background + a subtle shadow. */
 .ProseMirror .mb-view-seg {
   display: inline-flex;
   align-items: center;
-  gap: 2px;
-  padding: 2px;
-  background: var(--bg);
-  border: 1px solid var(--border);
+  gap: 1px;
+  padding: 3px;
+  background: var(--seg-bg);
   border-radius: 8px;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
 }
 .ProseMirror .mb-view-seg-btn {
   width: 28px;
-  height: 24px;
+  height: 22px;
   padding: 0;
   display: inline-flex;
   align-items: center;
@@ -2801,8 +2799,9 @@ html.source-word-wrap #source-view .cb-content {
 }
 .ProseMirror .mb-view-seg-btn:hover { color: var(--text-primary); }
 .ProseMirror .mb-view-seg-btn.mb-view-seg-active {
-  background: var(--text-primary);
-  color: var(--bg);
+  background: var(--seg-active-bg);
+  color: var(--text-primary);
+  box-shadow: var(--seg-active-shadow);
 }
 .ProseMirror .mb-view-seg-btn svg { width: 14px; height: 14px; }
 
