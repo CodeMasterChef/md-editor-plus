@@ -33,8 +33,9 @@ export const DRAG_THRESHOLD_PX = 4;
 /** Minimal manual drag wiring. Caller owns its own state.
  *
  * Usage:
- *   const cleanup = startDrag(e, { onMove, onDrop, onCancel });
- *   // cleanup unwires automatically on mouseup; call it manually only to cancel.
+ *   const cancel = startDrag(e, { onMove, onDrop, onCancel });
+ *   // The returned function cancels the drag and invokes onCancel.
+ *   // Internal mouseup handling unwires automatically (no need to call cancel).
  */
 export function startDrag(
   startEvent: MouseEvent,
@@ -59,12 +60,13 @@ export function startDrag(
   };
 
   const onUp = (e: MouseEvent) => {
-    cleanup();
+    teardown();
     if (moved) opts.onDrop(e);
     else       opts.onCancel?.();
   };
 
-  const cleanup = () => {
+  // Internal teardown — just remove listeners, no callback.
+  const teardown = () => {
     document.removeEventListener('mousemove', onMove, true);
     document.removeEventListener('mouseup',   onUp,   true);
   };
@@ -72,5 +74,9 @@ export function startDrag(
   document.addEventListener('mousemove', onMove, true);
   document.addEventListener('mouseup',   onUp,   true);
 
-  return cleanup;
+  // Returned cancel — unwires AND fires onCancel so the caller knows.
+  return () => {
+    teardown();
+    opts.onCancel?.();
+  };
 }
