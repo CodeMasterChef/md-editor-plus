@@ -2,6 +2,25 @@
 // Table renderer: builds an empty-state OR a <table> with one header per
 // visible field and one row per card.  Real cell editors arrive in Tasks 10-12.
 
+// ── TEMPORARY DIAGNOSTIC: visible flash on drag-related events ─────────────
+// Remove once the user confirms drag interactions work.
+const BUILD_MARKER = 'BOARD-BUILD-2026-05-24-r5';
+function dbgFlash(label: string, color: string): void {
+  let el = document.getElementById('bd-dbg-toast');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'bd-dbg-toast';
+    el.style.cssText = 'position:fixed;top:8px;right:8px;z-index:99999;background:#000;color:#fff;font:600 11px monospace;padding:6px 10px;border-radius:6px;pointer-events:none;opacity:0;transition:opacity 0.1s;';
+    document.body.appendChild(el);
+  }
+  el.style.background = color;
+  el.textContent = `${label} (${BUILD_MARKER})`;
+  el.style.opacity = '1';
+  clearTimeout((el as unknown as { _t?: number })._t);
+  (el as unknown as { _t?: number })._t = window.setTimeout(() => { el!.style.opacity = '0'; }, 1200);
+}
+// ──────────────────────────────────────────────────────────────────────────
+
 import type { Board, Card, ViewDef, FieldDef } from './boardModel';
 import type { BoardRendererCtx, BoardRendererOps } from './boardBlock';
 import { buildChip } from './boardSidePanel';
@@ -184,6 +203,7 @@ export function mountTable(ctx: BoardRendererCtx): BoardRendererOps {
         dragHandle.setAttribute('data-board-drag', '');
         dragHandle.innerHTML = `<svg viewBox="0 0 8 14" width="8" height="14"><circle cx="2" cy="3" r="1"/><circle cx="6" cy="3" r="1"/><circle cx="2" cy="7" r="1"/><circle cx="6" cy="7" r="1"/><circle cx="2" cy="11" r="1"/><circle cx="6" cy="11" r="1"/></svg>`;
         dragHandle.addEventListener('mousedown', (e) => {
+          dbgFlash('colDrag mousedown', '#15803d');
           e.preventDefault();
           e.stopPropagation();
           th.classList.add('bd-th-dragging');
@@ -222,6 +242,7 @@ export function mountTable(ctx: BoardRendererCtx): BoardRendererOps {
         resizer.className = 'bd-col-resizer';
         resizer.setAttribute('data-board-drag', '');
         resizer.addEventListener('mousedown', (e) => {
+          dbgFlash('resize mousedown', '#1d4ed8');
           e.preventDefault();
           e.stopPropagation();
           document.body.style.cursor = 'col-resize';
@@ -360,6 +381,7 @@ export function mountTable(ctx: BoardRendererCtx): BoardRendererOps {
           grip.setAttribute('data-board-drag', '');
           grip.innerHTML = `<svg viewBox="0 0 8 14" width="8" height="14"><circle cx="2" cy="3" r="1"/><circle cx="6" cy="3" r="1"/><circle cx="2" cy="7" r="1"/><circle cx="6" cy="7" r="1"/><circle cx="2" cy="11" r="1"/><circle cx="6" cy="11" r="1"/></svg>`;
           grip.addEventListener('mousedown', (ev) => {
+            dbgFlash('rowDrag mousedown', '#b45309');
             ev.preventDefault();
             ev.stopPropagation();
             tr.classList.add('bd-tr-dragging');

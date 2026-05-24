@@ -1,3 +1,20 @@
+// TEMPORARY DIAGNOSTIC: visible flash toast (mirrors boardTableRender.dbgFlash).
+// Remove once drag interactions are verified working.
+function flashDbg(label: string, color: string): void {
+  let el = document.getElementById('bd-dbg-toast');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'bd-dbg-toast';
+    el.style.cssText = 'position:fixed;top:8px;right:8px;z-index:99999;background:#000;color:#fff;font:600 11px monospace;padding:6px 10px;border-radius:6px;pointer-events:none;opacity:0;transition:opacity 0.1s;';
+    document.body.appendChild(el);
+  }
+  el.style.background = color;
+  el.textContent = label;
+  el.style.opacity = '1';
+  clearTimeout((el as unknown as { _t?: number })._t);
+  (el as unknown as { _t?: number })._t = window.setTimeout(() => { el!.style.opacity = '0'; }, 1200);
+}
+
 /** A drop indicator element with show/hide helpers. */
 export interface DropIndicator extends HTMLDivElement {
   show: (left: number, top: number, width: number, height: number) => void;
@@ -55,14 +72,21 @@ export function startDrag(
       const dy = e.clientY - startY;
       if (Math.hypot(dx, dy) < DRAG_THRESHOLD_PX) return;
       moved = true;
+      // TEMPORARY DIAGNOSTIC: announce drag promotion. Remove once verified.
+      flashDbg('startDrag promoted', '#7c2d12');
     }
     opts.onMove(e);
   };
 
   const onUp = (e: MouseEvent) => {
     teardown();
-    if (moved) opts.onDrop(e);
-    else       opts.onCancel?.();
+    if (moved) {
+      flashDbg('startDrag onDrop', '#16a34a');
+      opts.onDrop(e);
+    } else {
+      flashDbg('startDrag onCancel (no drag)', '#dc2626');
+      opts.onCancel?.();
+    }
   };
 
   // Internal teardown — just remove listeners, no callback.
