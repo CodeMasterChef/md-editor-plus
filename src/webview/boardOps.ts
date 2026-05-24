@@ -62,6 +62,8 @@ export function setViewColumns(board: Board, viewName: string, columns: string[]
 export function hideFieldInView(board: Board, viewName: string, field: string): void {
   const v = ensureView(board, viewName);
   v.hidden = Array.from(new Set([...(v.hidden ?? []), field]));
+  if (v.sort?.field === field) delete v.sort;
+  if (v.groupBy    === field) delete v.groupBy;
   pruneView(board, viewName);
 }
 

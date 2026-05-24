@@ -156,3 +156,20 @@ describe('boardOps.addCard', () => {
     expect(b.cards[2].values.Status).toBe('');
   });
 });
+
+describe('boardOps.hideFieldInView — auto-clear sort/group', () => {
+  it('clears sort if it referenced the hidden field', () => {
+    const b = makeBoard({
+      views: [{ name: 'table', sort: { field: 'Owner', dir: 'asc' } }],
+    });
+    ops.hideFieldInView(b, 'table', 'Owner');
+    expect(b.views[0].sort).toBeUndefined();
+  });
+  it('clears groupBy if it referenced the hidden field', () => {
+    const b = makeBoard({
+      views: [{ name: 'table', groupBy: 'Owner' }],
+    });
+    ops.hideFieldInView(b, 'table', 'Owner');
+    expect(b.views[0].groupBy).toBeUndefined();
+  });
+});
