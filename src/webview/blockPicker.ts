@@ -305,42 +305,22 @@ export const BLOCK_DEFS: BlockDef[] = [
       editor.chain().focus().insertContentAt(pos, { type: 'horizontalRule' }).run(),
   },
   {
-    id: 'board',
-    label: 'Kanban Board',
+    id: 'board-kanban',
+    label: 'Board: Kanban',
     description: 'Kanban board with columns and cards',
     iconHtml: ICO.board,
     section: 'lists',
-    aliases: ['board', 'kanban', 'tasks', 'project'],
-    insert: (editor, pos) => {
-      const id = `b-${Math.random().toString(36).slice(2, 6)}`;
-      const source = freshBoardSource(id);
-      // Insert the board followed by an empty paragraph so the cursor has
-      // somewhere to land below the (atom) board.
-      editor
-        .chain()
-        .focus()
-        .insertContentAt(pos, [
-          { type: 'board', attrs: { source } },
-          { type: 'paragraph' },
-        ])
-        .run();
-      // Focus the NEW board specifically by its id — querySelector('.board-name')
-      // alone would return the first board on the page and steal focus when
-      // adding a second/third board to the same doc.
-      requestAnimationFrame(() => {
-        const board = document.querySelector(
-          `.board-block[data-board-id="${id}"]`,
-        ) as HTMLElement | null;
-        const name = board?.querySelector('.board-name') as HTMLElement | null;
-        if (!name) return;
-        name.focus();
-        const range = document.createRange();
-        range.selectNodeContents(name);
-        const sel = window.getSelection();
-        sel?.removeAllRanges();
-        sel?.addRange(range);
-      });
-    },
+    aliases: ['board', 'kanban', 'tasks', 'project', 'board kanban'],
+    insert: (editor, pos) => insertBoardWith('kanban', editor, pos),
+  },
+  {
+    id: 'board-table',
+    label: 'Board: Table',
+    description: 'Table board: rows, columns, inline editing',
+    iconHtml: ICO.board,
+    section: 'lists',
+    aliases: ['board', 'table', 'database', 'grid', 'board table'],
+    insert: (editor, pos) => insertBoardWith('table', editor, pos),
   },
 ];
 
@@ -612,14 +592,56 @@ export function createBlockPicker(editor: Editor): BlockPicker {
   return { open, close };
 }
 
-function freshBoardSource(id: string): string {
-  return [
-    `<!-- board:start id="${id}" name="" columns="Todo|Doing|Done" column-colors="gray|amber|emerald" field-types="Title=text,Status=status,id=text" hidden-fields="id" -->`,
+function freshBoardSource(id: string, activeView?: 'kanban' | 'table'): string {
+  const av = activeView === 'table' ? ' active-view="table"' : '';
+  const parts: string[] = [
+    `<!-- board:start id="${id}" name="" columns="Todo|Doing|Done" column-colors="gray|amber|emerald" field-types="Title=text,Status=status,id=text" hidden-fields="id"${av} -->`,
     ``,
+  ];
+  if (activeView === 'table') {
+    parts.push(`<!-- board:view name="table" -->`, ``);
+  }
+  parts.push(
     `| Title    | Status | id |`,
     `|----------|--------|----|`,
     `| New card | Todo   | c1 |`,
     ``,
     `<!-- board:end -->`,
-  ].join('\n');
+  );
+  return parts.join('\n');
+}
+
+function insertBoardWith(
+  activeView: 'kanban' | 'table',
+  editor: Editor,
+  pos: number,
+): void {
+  const id = `b-${Math.random().toString(36).slice(2, 6)}`;
+  const source = freshBoardSource(id, activeView);
+  // Insert the board followed by an empty paragraph so the cursor has
+  // somewhere to land below the (atom) board.
+  editor
+    .chain()
+    .focus()
+    .insertContentAt(pos, [
+      { type: 'board', attrs: { source } },
+      { type: 'paragraph' },
+    ])
+    .run();
+  // Focus the NEW board specifically by its id — querySelector('.board-name')
+  // alone would return the first board on the page and steal focus when
+  // adding a second/third board to the same doc.
+  requestAnimationFrame(() => {
+    const board = document.querySelector(
+      `.board-block[data-board-id="${id}"]`,
+    ) as HTMLElement | null;
+    const name = board?.querySelector('.board-name') as HTMLElement | null;
+    if (!name) return;
+    name.focus();
+    const range = document.createRange();
+    range.selectNodeContents(name);
+    const sel = window.getSelection();
+    sel?.removeAllRanges();
+    sel?.addRange(range);
+  });
 }
