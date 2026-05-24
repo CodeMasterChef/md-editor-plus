@@ -130,7 +130,7 @@ export function mountTable(ctx: BoardRendererCtx): BoardRendererOps {
             const b2: Board = { ...cur, cards: [...cur.cards] };
             const presets: Partial<Record<string, string>> = {};
             if (v.groupBy) {
-              presets[v.groupBy] = (g.key === 'Uncategorized' || g.key === '—') ? '' : g.key;
+              presets[v.groupBy] = g.key === '—' ? '' : g.key;
             }
             const newId = addCard(b2, presets);
             pendingFocus.id = newId;

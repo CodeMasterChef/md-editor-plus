@@ -73,7 +73,7 @@ export function addCard(board: Board, presets: Partial<Record<string, string>> =
   for (const f of board.fields) {
     values[f.name] = presets[f.name] ?? '';
   }
-  if (!values.Status) values.Status = board.columns[0]?.name ?? '';
+  if (!('Status' in presets) && !values.Status) values.Status = board.columns[0]?.name ?? '';
   board.cards.push({ id, values, body: '' });
   return id;
 }

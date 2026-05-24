@@ -127,4 +127,9 @@ describe('boardOps.addCard', () => {
     expect(b.cards[2].values.Status).toBe('Doing');
     expect(b.cards[2].values.Title).toBe('X');
   });
+  it('explicit empty Status preset stays empty (not auto-defaulted)', () => {
+    const b = makeBoard();
+    ops.addCard(b, { Status: '' });
+    expect(b.cards[2].values.Status).toBe('');
+  });
 });
