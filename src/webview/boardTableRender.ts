@@ -2,22 +2,27 @@
 // Table renderer: builds an empty-state OR a <table> with one header per
 // visible field and one row per card.  Real cell editors arrive in Tasks 10-12.
 
-// ── TEMPORARY DIAGNOSTIC: visible flash on drag-related events ─────────────
-// Remove once the user confirms drag interactions work.
-const BUILD_MARKER = 'BOARD-BUILD-2026-05-24-r5';
+// ── TEMPORARY DIAGNOSTIC: append-only log overlay ──────────────────────────
+// Each event adds a new line. Click the panel to clear. Remove before merge.
+const BUILD_MARKER = 'BOARD-2026-05-25-r7';
 function dbgFlash(label: string, color: string): void {
-  let el = document.getElementById('bd-dbg-toast');
-  if (!el) {
-    el = document.createElement('div');
-    el.id = 'bd-dbg-toast';
-    el.style.cssText = 'position:fixed;top:8px;right:8px;z-index:99999;background:#000;color:#fff;font:600 11px monospace;padding:6px 10px;border-radius:6px;pointer-events:none;opacity:0;transition:opacity 0.1s;';
-    document.body.appendChild(el);
+  let panel = document.getElementById('bd-dbg-log') as HTMLDivElement | null;
+  if (!panel) {
+    panel = document.createElement('div');
+    panel.id = 'bd-dbg-log';
+    panel.style.cssText = 'position:fixed;top:8px;right:8px;z-index:99999;background:rgba(0,0,0,0.9);color:#fff;font:600 11px ui-monospace,monospace;padding:6px 10px;border-radius:6px;pointer-events:auto;max-width:380px;max-height:60vh;overflow-y:auto;cursor:pointer;';
+    panel.title = `Click to clear (${BUILD_MARKER})`;
+    panel.addEventListener('click', () => { panel!.innerHTML = ''; });
+    document.body.appendChild(panel);
   }
-  el.style.background = color;
-  el.textContent = `${label} (${BUILD_MARKER})`;
-  el.style.opacity = '1';
-  clearTimeout((el as unknown as { _t?: number })._t);
-  (el as unknown as { _t?: number })._t = window.setTimeout(() => { el!.style.opacity = '0'; }, 1200);
+  const line = document.createElement('div');
+  const ts = new Date().toISOString().slice(14, 23);
+  line.textContent = `[${ts}] ${label}`;
+  line.style.cssText = `color:${color};line-height:1.4;border-left:3px solid ${color};padding-left:6px;margin:1px 0;`;
+  panel.appendChild(line);
+  panel.scrollTop = panel.scrollHeight;
+  // Cap to last 50 lines so it doesn't grow forever.
+  while (panel.children.length > 50) panel.removeChild(panel.firstChild!);
 }
 // ──────────────────────────────────────────────────────────────────────────
 
