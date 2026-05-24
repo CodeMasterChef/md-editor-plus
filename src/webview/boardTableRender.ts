@@ -148,11 +148,24 @@ export function mountTable(ctx: BoardRendererCtx): BoardRendererOps {
   dbgFlash('mountTable() running', '#9333ea');
   const root = ctx.root;
   root.classList.add('bd-table-host');
+  // Three-tier capture listeners to pinpoint WHERE mousedown is being eaten.
+  const onDoc = (e: MouseEvent) => {
+    const t = e.target as HTMLElement | null;
+    const inTable = !!t?.closest('.bd-table-host');
+    if (inTable) dbgFlash(`DOC capture: tag=${t?.tagName}`, '#dc2626');
+  };
+  document.addEventListener('mousedown', onDoc, true);
+  const onDom = (e: MouseEvent) => {
+    const t = e.target as HTMLElement | null;
+    const inTable = !!t?.closest('.bd-table-host');
+    if (inTable) dbgFlash(`DOM(board) capture: tag=${t?.tagName}`, '#f59e0b');
+  };
+  root.parentElement?.addEventListener('mousedown', onDom, true);
   root.addEventListener('mousedown', (e) => {
     const t = e.target as HTMLElement | null;
     const cls = t?.className || t?.tagName || '?';
     const inDrag = !!t?.closest('[data-board-drag]');
-    dbgFlash(`host mousedown: ${typeof cls === 'string' ? cls.slice(0, 30) : '?'} drag=${inDrag}`, '#0891b2');
+    dbgFlash(`HOST capture: ${typeof cls === 'string' ? cls.slice(0, 30) : '?'} drag=${inDrag}`, '#0891b2');
   }, true);
   let detached = false;
   const collapsedGroups = new Set<string>();
