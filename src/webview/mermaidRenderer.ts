@@ -30,17 +30,17 @@ interface ThemeVarSet {
   noteTextColor:    string;
 }
 
-const THEME_VARS: Record<DiagramTheme, ThemeVarSet> = {
+export const THEME_VARS: Record<DiagramTheme, ThemeVarSet> = {
   light: {
     background:       '#ffffff',
-    primaryColor:     '#eef2ff',
+    primaryColor:     '#dbeafe',
     primaryTextColor: '#1a1a1a',
     primaryBorderColor: '#6366f1',
     secondaryColor:   '#ecfeff',
     tertiaryColor:    '#f0fdf4',
     lineColor:        '#4b5563',
     textColor:        '#1a1a1a',
-    mainBkg:          '#eef2ff',
+    mainBkg:          '#dbeafe',
     clusterBkg:       '#f5f5f7',
     noteBkgColor:     '#fff8c5',
     noteTextColor:    '#9a6700',

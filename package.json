@@ -233,7 +233,8 @@
     ],
     "moduleNameMapper": {
       "\\.css$": "<rootDir>/tests/__mocks__/fileMock.js",
-      "^(\\.{1,2}/)*editor$": "<rootDir>/tests/__mocks__/editorMock.js"
+      "^(\\.{1,2}/)*editor$": "<rootDir>/tests/__mocks__/editorMock.js",
+      "^mermaid$": "<rootDir>/tests/__mocks__/mermaidMock.js"
     },
     "transform": {
       "^.+\\.tsx?$": [
