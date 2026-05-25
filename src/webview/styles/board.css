@@ -464,28 +464,28 @@ button.board-column-chip-dot:hover {
   transition: color 0.12s, transform 0.08s;
   opacity: 0.85;
 }
-/* The inner body uses the column's own rules; widen it to fill the 44px button
-   and center the + glyph in the middle of the body area. */
+/* The inner body uses the column's normal block-flow rules. The hidden head
+   + hidden add-card alone determine the body height — these are the same
+   children a real empty column has — so the heights match by construction.
+   The + glyph is absolutely positioned over the body so it doesn't add any
+   extra height. */
 .board-add-column-big .board-add-column-mirror {
   width: 100%;
-  display: flex;
-  flex-direction: column;
+  position: relative;
 }
 .board-add-column-big .board-column-head {
-  /* Empty head — purely a spacer so the body offsets match a real column. */
   visibility: hidden;
 }
 .board-add-column-glyph {
-  flex: 1 1 auto;
+  position: absolute;
+  inset: 0;
   display: flex;
   align-items: center;
   justify-content: center;
-  min-height: 28px;
+  pointer-events: none;
 }
 .board-add-column-big svg { width: 18px; height: 18px; }
 .board-add-column-spacer {
-  /* Invisible "+ New card" twin — sized identically so the bottom of the
-     button lines up with the bottom of a real column. */
   visibility: hidden;
   pointer-events: none;
 }
