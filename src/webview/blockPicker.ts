@@ -592,6 +592,18 @@ export function createBlockPicker(editor: Editor): BlockPicker {
   return { open, close };
 }
 
+export function freshWhiteboardSource(): string {
+  return [
+    'flowchart LR',
+    '    %% mb-positions: {"A":[120,80],"B":[320,80],"C":[520,80]}',
+    '    A[Idea]',
+    '    B[Next]',
+    '    C[Done]',
+    '    A --> B',
+    '    B --> C',
+  ].join('\n');
+}
+
 function freshBoardSource(id: string, activeView?: 'kanban' | 'table'): string {
   const av = activeView === 'table' ? ' active-view="table"' : '';
   const parts: string[] = [
