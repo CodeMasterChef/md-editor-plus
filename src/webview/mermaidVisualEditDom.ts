@@ -2000,8 +2000,9 @@ export function createVisualEditor(opts: VisualEditorOptions): VisualEditorHandl
     if (svg.getAttribute('viewBox') !== lockedViewBox) {
       svg.setAttribute('viewBox', lockedViewBox);
     }
-    svg.style.width  = '100%';
-    svg.style.height = '100%';
+    svg.style.width    = '100%';
+    svg.style.height   = '100%';
+    svg.style.maxWidth = '100%';
     svg.setAttribute('preserveAspectRatio', 'xMidYMid meet');
   }
 
@@ -3829,8 +3830,13 @@ export function applyPositionsOverlay(ast: Ast, host: HTMLElement): void {
       if (svg) {
         svg.setAttribute('viewBox', stashedVb);
         svg.setAttribute('preserveAspectRatio', 'xMidYMid meet');
-        svg.style.width  = '100%';
-        svg.style.height = '100%';
+        // Mermaid sets an inline `style="max-width: <natural>px"` on every
+        // render which clamps the SVG to its natural width. Without this
+        // override, the SVG ends up much smaller than the pane and content
+        // appears shrunken on every re-render. Match fitSvgViewBoxToNodes.
+        svg.style.width    = '100%';
+        svg.style.height   = '100%';
+        svg.style.maxWidth = '100%';
       }
     }
   } else {
