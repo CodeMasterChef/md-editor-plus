@@ -393,8 +393,8 @@ export function createVisualEditor(opts: VisualEditorOptions): VisualEditorHandl
     const act = (e.target as HTMLElement).closest<HTMLElement>('[data-act]')?.dataset.act;
     if (!act) return;
     e.preventDefault(); e.stopPropagation();
-    if (act === 'in')  setZoom(viewport.scale + 0.1);
-    if (act === 'out') setZoom(viewport.scale - 0.1);
+    if (act === 'in')  setZoom(viewport.scale + 0.05);
+    if (act === 'out') setZoom(viewport.scale - 0.05);
     if (act === 'fit') resetViewport();
   });
   const zoomReadout = {
@@ -730,8 +730,8 @@ export function createVisualEditor(opts: VisualEditorOptions): VisualEditorHandl
     }
 
     // Phase 7: zoom keys.
-    if (meta && (e.key === '=' || e.key === '+')) { e.preventDefault(); setZoom(viewport.scale + 0.1); return; }
-    if (meta && (e.key === '-' || e.key === '_')) { e.preventDefault(); setZoom(viewport.scale - 0.1); return; }
+    if (meta && (e.key === '=' || e.key === '+')) { e.preventDefault(); setZoom(viewport.scale + 0.05); return; }
+    if (meta && (e.key === '-' || e.key === '_')) { e.preventDefault(); setZoom(viewport.scale - 0.05); return; }
     if (meta &&  e.key === '0')                   { e.preventDefault(); resetViewport();                 return; }
 
     // Space — temporary Pan grab cursor (matches Figma / Miro). Prevent
@@ -1707,7 +1707,11 @@ export function createVisualEditor(opts: VisualEditorOptions): VisualEditorHandl
     if (!e.ctrlKey && !e.metaKey) return;
     if (!opts.previewPane.contains(e.target as Node)) return;
     e.preventDefault();
-    const factor = e.deltaY < 0 ? 0.1 : -0.1;
+    // Wheel-event deltaY varies wildly across input devices (trackpad
+     // pinches fire many small events; wheel mice fire larger discrete
+     // events). Cap each event's contribution to keep zoom steady.
+    const step = Math.min(0.05, Math.abs(e.deltaY) * 0.001);
+    const factor = e.deltaY < 0 ? step : -step;
     setZoom(viewport.scale + factor, { x: e.clientX, y: e.clientY });
   }
   function onKeyUp(e: KeyboardEvent): void {
