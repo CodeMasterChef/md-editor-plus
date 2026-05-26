@@ -7,6 +7,48 @@ Add new entries at the top of each section.
 
 ---
 
+## Header / chrome responsiveness (deferred from whiteboard manual smoke 2026-05-26)
+
+At narrow window widths the top-of-plugin chrome stops fitting:
+- The outline-panel sidebar overlaps the Preview/Code toggle pill instead
+  of auto-collapsing.
+- The "Preview" / "Code" button labels stay full-width when there's no
+  room — should drop to icon-only below a breakpoint.
+- The open file name doesn't truncate cleanly and ends up overlapping
+  the right-side header buttons (reload / theme / `⋯`).
+
+Fix targets:
+1. Auto-collapse the outline panel below a width breakpoint (likely
+   when the editor column drops below its text min-width).
+2. Hide the Preview/Code labels and keep just the eye/code glyphs at
+   narrow widths (matches what the in-block mermaid Preview/Code
+   toggle already does in `mermaidBlock.ts`).
+3. Make the file-name region behave: `min-width: 0` on its flex parent
+   + `text-overflow: ellipsis` + a sane `flex` ratio so the right-side
+   button group never gets covered.
+
+---
+
+## Whiteboard canvas-sizing on first paint (deferred from `2026-05-25-visual-edit-init-polish-design.md`)
+
+After Task 3 (rAF wrap + retry) was reverted and pre-pinned positions
+were dropped from the whiteboard starter (`0070d4b`), the canvas
+behavior is acceptable but still not "infinite-canvas" perfect:
+- The SVG viewBox is whatever mermaid auto-laid-out; dragged-out nodes
+  clip at the SVG bounds.
+- No visual indicator of canvas extent (dot grid was removed in `8d00cb0`).
+- The `naturalSvgScale` helper in `mermaidVisualEditDom.ts` is now
+  dead code — keep or rip depending on whether the dot grid comes back
+  in a different form.
+
+Open questions worth a separate brainstorm:
+- Should the canvas behave as truly infinite (viewBox auto-expands on
+  drag toward edges), or stay bounded with explicit zoom/pan?
+- If we bring back a backdrop pattern, paint it on the HTML pane (not
+  inside the SVG) so it doesn't read as a hard boundary.
+
+---
+
 ## Board — table view (deferred from `2026-05-23-board-table-view-design.md`)
 
 - Multi-column sort
