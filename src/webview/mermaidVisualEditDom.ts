@@ -5165,39 +5165,18 @@ function fitSvgViewBoxToNodes(host: HTMLElement): void {
     h = Math.max(cy2, y + h) - y;
   }
 
-  // Free-canvas mode (when the block is in visual-edit). Expand the viewBox
-  // to fill the preview pane's aspect ratio so the SVG can stretch to the
-  // edges — that gives users empty space around the diagram to drop new
-  // nodes into instead of pushing them off the top/side. We key off
-  // `mb-visual-active` because it's added inside createVisualEditor (more
-  // reliable than `mb-visual`, which the block extension manages).
+  // The block's visual-edit state — used to decide CSS sizing below. We
+  // deliberately DO NOT expand the viewBox to match the preview pane's
+  // aspect ratio anymore: that math was making content appear smaller as
+  // it was dragged outward, with large empty bands on the sides. Instead
+  // the viewBox stays tight around the content + a small PAD, and the
+  // SVG element handles letterboxing via preserveAspectRatio.
   const visualBlock = host.closest('.mb-visual, .mb-visual-active') as HTMLElement | null;
-  if (visualBlock) {
-    const preview = host.closest<HTMLElement>('.mb-preview') ?? host;
-    const pr = preview.getBoundingClientRect();
-    if (pr.width > 0 && pr.height > 0) {
-      const previewAspect = pr.width / pr.height;
-      const cx = x + w / 2;
-      const cy = y + h / 2;
-      const viewAspect = w / h;
-      if (viewAspect > previewAspect) {
-        // Diagram is wider than preview — grow height to match.
-        const newH = w / previewAspect;
-        y = cy - newH / 2;
-        h = newH;
-      } else {
-        // Diagram is taller — grow width to match.
-        const newW = h * previewAspect;
-        x = cx - newW / 2;
-        w = newW;
-      }
-    }
-  }
 
   svg.setAttribute('viewBox', `${x} ${y} ${w} ${h}`);
   if (visualBlock) {
-    // Fill the preview pane both width and height — the viewBox above
-    // matches the aspect ratio so nothing letterboxes.
+    // Fill the preview pane both width and height — preserveAspectRatio
+    // centers the (possibly smaller) content and letterboxes the rest.
     svg.setAttribute('preserveAspectRatio', 'xMidYMid meet');
     svg.style.width  = '100%';
     svg.style.height = '100%';
