@@ -93,6 +93,16 @@ const Board = Node.create({
         isReadOnly() {
           return !editor.isEditable;
         },
+        onDelete() {
+          const pos = typeof getPos === 'function' ? getPos() : null;
+          if (pos == null) return;
+          editor.chain().focus().command(({ tr, dispatch }) => {
+            const n = tr.doc.nodeAt(pos);
+            if (!n || n.type.name !== 'board') return false;
+            if (dispatch) tr.delete(pos, pos + n.nodeSize);
+            return true;
+          }).run();
+        },
       });
       // Clicking the board's own chrome / background (not a card, column,
       // button, input, or editable text) selects the whole board node, so the

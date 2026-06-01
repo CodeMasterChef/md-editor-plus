@@ -1303,6 +1303,22 @@ body.is-dragging-property .board-properties-name { user-select: none; }
 }
 .bd-more-menu.bd-hidden { display: none; }
 .bd-more-sep { height: 1px; background: var(--border); margin: 8px 0; }
+/* Destructive "Delete board" row at the bottom of the ⋯ menu */
+.bd-more-delete {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 7px 8px;
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  font: 500 13px ui-sans-serif, sans-serif;
+  color: #e5484d;
+  cursor: pointer;
+  text-align: left;
+}
+.bd-more-delete:hover { background: rgba(229,72,77,0.12); }
 .bd-more-view { padding: 4px 6px 8px 6px; }
 .bd-view-seg {
   display: inline-flex; gap: 1px; padding: 3px;

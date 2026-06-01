@@ -22,6 +22,8 @@ export const BOARD_INTERACTIVE_SELECTOR =
 export interface BoardViewOptions {
   onMutate(nextSource: string): void;
   isReadOnly(): boolean;
+  /** Remove the whole board node from the document (wired via the NodeView's getPos). */
+  onDelete?(): void;
 }
 
 /** Context object passed from the controller to a board renderer. */
@@ -31,6 +33,8 @@ export interface BoardRendererCtx {
   mutate:         (next: Board) => void;
   /** Open the card side-panel for the given card id. */
   openSidePanel:  (cardId: string) => void;
+  /** Delete the entire board block from the document. */
+  requestDelete:  () => void;
   readonly:       boolean;
 }
 
@@ -131,6 +135,7 @@ export function createBoardView(initialSource: string, opts: BoardViewOptions): 
         ro ? undefined : (nextBoard) => mutate(nextBoard),
       );
     },
+    requestDelete: () => opts.onDelete?.(),
     readonly: opts.isReadOnly(),
   };
 
