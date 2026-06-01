@@ -2842,6 +2842,8 @@ html.source-word-wrap #source-view .cb-content {
   width: 100%;
 }
 .ProseMirror .mb-more-row:hover { background: var(--block-hover); }
+.ProseMirror .mb-more-row-delete { color: #e5484d; }
+.ProseMirror .mb-more-row-delete:hover { background: rgba(229,72,77,0.12); }
 .ProseMirror .mb-more-row-toggle { justify-content: space-between; }
 .ProseMirror .mb-more-row-label { color: var(--text-primary); }
 .ProseMirror .mb-more-row-toggle .mb-toggle {
