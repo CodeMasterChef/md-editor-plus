@@ -24,6 +24,9 @@ describe('formatSummary', () => {
   it('uses singular for one line', () => {
     expect(formatSummary({ lines: 1, words: 4 })).toBe('Converting 1 line · ~4 words');
   });
+  it('uses singular for one word', () => {
+    expect(formatSummary({ lines: 2, words: 1 })).toBe('Converting 2 lines · ~1 word');
+  });
 });
 
 describe('locateAnchors', () => {
