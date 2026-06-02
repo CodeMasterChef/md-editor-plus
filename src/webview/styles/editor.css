@@ -4711,4 +4711,43 @@ html.theme-dark .ProseMirror .mb-vTb-grid.mb-vTb-active {
 .skill-blocks { display: flex; flex-direction: column; gap: 8px; padding: 8px 16px 4px; }
 .skill-block { display: flex; align-items: center; gap: 10px; font-size: 13px; color: var(--text-primary); cursor: pointer; }
 .skill-block input { cursor: pointer; }
-.skill-foot { flex-wrap: wrap; }
+/* Destination segmented control */
+.skill-dest {
+  display: flex;
+  gap: 2px;
+  margin: 12px 16px 8px;
+  padding: 3px;
+  background: var(--seg-bg, rgba(127,127,127,0.12));
+  border-radius: 10px;
+}
+.skill-dest-seg {
+  flex: 1;
+  padding: 7px 6px;
+  font-size: 12.5px;
+  border: none;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+.skill-dest-seg.active {
+  background: var(--bg, #fff);
+  color: var(--text-primary);
+  font-weight: 600;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.15);
+}
+.skill-dest-seg.disabled { opacity: 0.4; cursor: not-allowed; }
+.skill-dest-info {
+  margin: 0 16px 4px;
+  font-size: 12px;
+  color: var(--text-primary);
+  line-height: 1.5;
+}
+.skill-dest-info code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+  background: var(--block-hover);
+  padding: 1px 5px;
+  border-radius: 4px;
+}
+.skill-path-muted { color: var(--text-secondary); }

@@ -109,6 +109,7 @@ export class MdEditorPlusProvider implements vscode.CustomTextEditorProvider {
         markdown: document.getText(),
         mediaBaseUri,
         documentPath: vscode.workspace.asRelativePath(document.uri),
+        workspaceName: vscode.workspace.getWorkspaceFolder(document.uri)?.name ?? null,
         defaults: {
           theme:               cfg.get<string>('theme', 'light'),
           font:                cfg.get<string>('font', 'sans'),
