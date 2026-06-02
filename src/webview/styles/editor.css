@@ -4541,7 +4541,17 @@ html.theme-dark .ProseMirror .mb-vTb-grid.mb-vTb-active {
 
 /* ── Turn selection into… using AI ───────────────────────────────────── */
 .bubble-ai.hidden { display: none; }
-.bubble-ai { padding: 4px; max-height: 340px; overflow-y: auto; }
+/* Scrolls when the target list overflows — hide the OS scrollbar, reveal a
+   subtle custom one on hover (see scrollbar-styling rule). NEVER leave raw
+   overflow-y:auto here; the OS default dark bar reads as a bug. */
+.bubble-ai { padding: 4px; max-height: 340px; overflow-y: auto; scrollbar-width: none; }
+.bubble-ai::-webkit-scrollbar { width: 0; background: transparent; }
+.bubble-ai::-webkit-scrollbar-track { background: transparent; }
+.bubble-ai::-webkit-scrollbar-thumb { background: transparent; }
+.bubble-ai:hover { scrollbar-width: thin; }
+.bubble-ai:hover::-webkit-scrollbar { width: 8px; }
+.bubble-ai:hover::-webkit-scrollbar-thumb { background: rgba(127,127,127,0.35); border-radius: 4px; border: 1.5px solid transparent; background-clip: padding-box; }
+.bubble-ai:hover::-webkit-scrollbar-thumb:hover { background: rgba(127,127,127,0.55); background-clip: padding-box; }
 .bm-ai-btn.active { color: var(--link); }
 
 .bm-into-divider {
