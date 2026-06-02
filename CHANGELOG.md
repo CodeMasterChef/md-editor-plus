@@ -19,6 +19,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Hardened against agents that reply "done" without acting — the prompt asks them to either edit the file or output the block, never just acknowledge.
   - A small panel previews the exact prompt (read-only) with a 3-step "what to do next", and copies it to the clipboard.
 - **Delete blocks** — remove any block from the **⠿ dragger menu** ("Delete"), a board from its **⋯ menu** ("Delete board"), a Mermaid diagram from its **⋯ menu** ("Delete"), or select a board and press **Delete / Backspace** (click the board's chrome to select it; it shows a selected outline).
+
+- **Create blocks skill** — a ⋯-menu action ("Create blocks skill…") that generates a reusable **Claude Skill** (`SKILL.md`) documenting the exact grammar for this app's blocks (Kanban/Table boards, Mermaid, Callouts, Toggles). Tick which blocks to include, then **Install in project** (`.claude/skills/`), **Install globally** (`~/.claude/skills/`), or **Download**. The grammar is shared with the ✨ AI prompts via a single source of truth, and the board examples are proven to round-trip through the parser. No network — local file write only.
 - **End-to-end pipeline regression test** ([tests/board/pipeline.test.ts](tests/board/pipeline.test.ts)) — runs the full chain `preprocess → markdown-it → DOMParser → parseBoardSource` and asserts every card survives. Covers single board, multi-word column names ("Up Next", "In Progress"), two boards in one file, and boards with `board:body` blocks attached. Locks the fix in.
 
 ### Developer

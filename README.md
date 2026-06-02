@@ -54,6 +54,10 @@ The prompt carries the file path, the selection's location (line + text anchors)
 
 A small panel walks you through it: choose where the result goes via a segmented control — **Add below** (default), **Replace**, or **Custom** (leaves placement open so you direct it in the chat) — preview the exact prompt, then copy. Prompts end with the action itself, so when they land in your AI the cursor sits right where you'd keep typing.
 
+### Create a blocks skill
+
+From the ⋯ actions menu, **Create blocks skill…** generates a reusable **Claude Skill** (`SKILL.md`) that teaches your AI the exact grammar for this app's blocks (Kanban/Table boards, Mermaid, Callouts, Toggles) — tick which blocks to include, then **Install in project** (`.claude/skills/`), **Install globally** (`~/.claude/skills/`), or **Download**. Once installed, Claude auto-loads it whenever you ask for one of these blocks, so the output renders correctly with no copy-paste. The grammar comes from the same single source as the ✨ prompts, so they never drift.
+
 ### Display settings (Aa panel)
 
 - **Four themes** — Light, Claude, Sepia, Dark — plus a **Sync with** selector (Off / OS / IDE) that follows your system or editor's light/dark mode
