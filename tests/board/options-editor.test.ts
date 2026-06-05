@@ -3,7 +3,7 @@
  */
 import { buildOptionsEditor } from '../../src/webview/boardStatusOptions';
 import type { Board, ColumnDef } from '../../src/webview/boardModel';
-import { openFieldActionMenu } from '../../src/webview/boardProperties';
+import { openFieldActionMenu, promptNewField } from '../../src/webview/boardProperties';
 
 function render(options: ColumnDef[], cb: any) {
   const host = document.createElement('div');
@@ -120,5 +120,31 @@ describe('field action menu — Edit options', () => {
     const b = fieldMenuBoard();
     openFieldActionMenu(anchor(), b, b.fields[2], () => {});
     expect(labels()).not.toContain('Edit options');
+  });
+});
+
+describe('new-column popover — status seeds + creates with options', () => {
+  it('picking Status reveals a States editor and Create button; Create adds a status field with options', () => {
+    const board = fieldMenuBoard();
+    let created: { board: Board; name: string } | null = null;
+    const a = document.createElement('button'); document.body.appendChild(a);
+
+    promptNewField(a, board, (next, name) => { created = { board: next, name }; });
+
+    const rows = Array.from(document.querySelectorAll('.board-add-field-type-row')) as HTMLElement[];
+    const statusRow = rows.find((r) => /status/i.test(r.textContent || ''))!;
+    statusRow.click();
+
+    expect(document.querySelector('.bd-opt-editor')).not.toBeNull();
+    expect(created).toBeNull();
+
+    const createBtn = document.querySelector('.board-add-field-create') as HTMLElement;
+    expect(createBtn).not.toBeNull();
+    createBtn.click();
+
+    expect(created).not.toBeNull();
+    const field = created!.board.fields.find((f) => f.name === created!.name)!;
+    expect(field.type).toBe('status');
+    expect((field.options ?? []).length).toBeGreaterThan(0);
   });
 });

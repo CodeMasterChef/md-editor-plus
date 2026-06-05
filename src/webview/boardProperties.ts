@@ -1,8 +1,14 @@
 // src/webview/boardProperties.ts
-import type { Board, FieldDef, FieldType } from './boardModel';
+import type { Board, FieldDef, FieldType, ColumnDef } from './boardModel';
 import { FIELD_TYPE_ICONS, FIELD_TYPE_LABELS } from './boardIcons';
 import { setViewColumns, hideFieldInView, showFieldInView } from './boardOps';
-import { openStatusOptionsEditor } from './boardStatusOptions';
+import { buildOptionsEditor, openStatusOptionsEditor } from './boardStatusOptions';
+
+const DEFAULT_STATUS_OPTIONS: ColumnDef[] = [
+  { name: 'Todo',        color: 'blue' },
+  { name: 'In progress', color: 'amber' },
+  { name: 'Done',        color: 'emerald' },
+];
 
 // ===== Shared field-mutation helpers =====
 // These are used by both the Properties popover (board chrome) and the
@@ -642,7 +648,10 @@ export function promptNewField(
       <span class="board-add-field-type-icon">${FIELD_TYPE_ICONS[t]}</span>
       <span class="board-add-field-type-label">${FIELD_TYPE_LABELS[t]}</span>
     `;
-    row.addEventListener('click', () => commit(t));
+    row.addEventListener('click', () => {
+      if (t === 'status') showStatusSetup();
+      else commit(t);
+    });
     list.appendChild(row);
   }
 
@@ -663,6 +672,53 @@ export function promptNewField(
       pop.style.left = `${window.scrollX + margin}px`;
     }
   });
+
+  function showStatusSetup(): void {
+    list.remove();
+    sectionLabel.textContent = 'States';
+
+    const working: ColumnDef[] = DEFAULT_STATUS_OPTIONS.map((o) => ({ ...o }));
+    const editorHost = document.createElement('div');
+    pop.appendChild(editorHost);
+
+    const PAL = ['gray','blue','amber','emerald','red','purple','orange','teal','indigo','pink'] as const;
+    const rerender = () => buildOptionsEditor(editorHost, {
+      getOptions: () => working,
+      onAdd: () => {
+        const used = working.map((o) => o.color);
+        const color = PAL.find((c) => !used.includes(c)) ?? 'gray';
+        working.push({ name: 'New', color });
+        rerender();
+      },
+      onRename: (o, n) => { const t2 = working.find((w) => w.name === o); if (t2) t2.name = n; rerender(); },
+      onRecolor: (n, c) => { const t2 = working.find((w) => w.name === n); if (t2) t2.color = c; rerender(); },
+      onDelete: (n) => { const i = working.findIndex((w) => w.name === n); if (i >= 0) working.splice(i, 1); rerender(); },
+    });
+    rerender();
+
+    const createBtn = document.createElement('button');
+    createBtn.type = 'button';
+    createBtn.className = 'board-add-field-create';
+    createBtn.textContent = 'Create column';
+    createBtn.addEventListener('click', () => commitStatus(working));
+    pop.appendChild(createBtn);
+  }
+
+  function commitStatus(options: ColumnDef[]): void {
+    const base = FIELD_TYPE_LABELS.status;
+    let name = base;
+    let n = 2;
+    while (board.fields.some((f) => f.name === name)) name = `${base} ${n++}`;
+    onChange(
+      {
+        ...board,
+        fields: [...board.fields, { name, type: 'status', visibleOnCard: true, options }],
+        cards: board.cards.map((c) => ({ ...c, values: { ...c.values, [name]: '' } })),
+      },
+      name,
+    );
+    closePop();
+  }
 
   const commit = (type: FieldType) => {
     // Generate a default name based on the type label, auto-suffixed on conflict.
