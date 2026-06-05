@@ -4757,3 +4757,98 @@ html.theme-dark .ProseMirror .mb-vTb-grid.mb-vTb-active {
 .skill-path-muted { color: var(--text-secondary); }
 /* Bigger primary action in this panel. */
 .skill-panel .ai-panel-btn-primary { padding: 12px 22px; font-size: 14px; border-radius: 10px; }
+
+/* ─── In-document find (Cmd/Ctrl+F) ─────────────────────────────────────── */
+
+/* Match highlights, painted via ProseMirror decorations. */
+.search-match {
+  background: #ffe27a;
+  border-radius: 2px;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.04);
+}
+.search-match-active {
+  background: #ff9a3d;
+  color: #1a1a1a;
+}
+.theme-dark .search-match {
+  background: #6b5a1f;
+  color: #fff3d6;
+  box-shadow: none;
+}
+.theme-dark .search-match-active {
+  background: #d9822b;
+  color: #1a1a1a;
+}
+
+/* Floating find bar, top-right of the viewport. */
+.find-bar {
+  position: fixed;
+  top: 64px;
+  right: 20px;
+  z-index: 300;
+  display: none;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 8px;
+  background: var(--toolbar-bg, var(--bg));
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.18), 0 2px 8px rgba(0, 0, 0, 0.10);
+  font-family: var(--font-body);
+}
+.theme-dark .find-bar {
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.55), 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+.find-bar.open { display: flex; }
+
+.find-bar-icon {
+  display: grid;
+  place-items: center;
+  width: 20px;
+  color: var(--text-secondary);
+}
+.find-bar-input {
+  border: none;
+  outline: none;
+  background: transparent;
+  color: var(--text-primary);
+  font-size: 13px;
+  width: 150px;
+  padding: 2px 2px;
+}
+.find-bar-input::placeholder { color: var(--text-secondary); }
+
+.find-bar-count {
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  padding: 0 2px;
+  min-width: 30px;
+  text-align: center;
+}
+.find-bar.find-bar-empty .find-bar-count { color: #e5534b; }
+
+.find-bar-divider {
+  width: 1px;
+  height: 18px;
+  background: var(--border);
+  margin: 0 2px;
+}
+
+.find-bar-btn {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border: none;
+  background: transparent;
+  border-radius: 6px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+.find-bar-btn:hover {
+  background: var(--toolbar-btn-hover);
+  color: var(--text-primary);
+}

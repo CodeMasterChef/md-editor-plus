@@ -4,6 +4,16 @@ All notable changes to **MD Editor Plus** are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **Find in page (⌘F / Ctrl+F)** — a Notion-style find bar for the editor. VS Code's native find can't reach inside a custom-editor webview, so this is a built-in search over the document. Highlights every match with a live `3 / 12` count, <kbd>Enter</kbd> / <kbd>Shift+Enter</kbd> (or ↑ ↓) navigates, <kbd>Esc</kbd> closes. Also reachable from the `⋯` menu as **Find in page**.
+  - **Searches the document model, not the DOM**, via a ProseMirror decoration plugin — so it finds text inside a *collapsed* toggle, then auto-expands the toggle and scrolls the match into view. Decorations never touch content, so highlighting can't dirty the file.
+  - **Works in both views** — Preview and Code. Switching views while the bar is open moves the search to the now-active editor.
+  - Case-insensitive plain-text matching (no regex/replace in this version). Board card text is out of scope for now — boards store their content as an opaque attribute the text walk can't see; a board-aware path can slot in later.
+  - Match-finding logic is a pure function ([src/webview/search.ts](src/webview/search.ts)) covered by unit tests ([tests/search.test.ts](tests/search.test.ts)).
+
 ## [0.5.2] - 2026-06-02
 
 ### Fixed

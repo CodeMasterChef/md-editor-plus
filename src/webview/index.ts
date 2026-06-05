@@ -2,7 +2,8 @@ import lightCss from './styles/notion-light.css';
 import darkCss from './styles/notion-dark.css';
 import editorCss from './styles/editor.css';
 import boardCss from './styles/board.css';
-import { createEditor, updateContent, createSourceEditor, updateSourceContent, getSourceMarkdown, getCurrentMarkdown, setFrontmatterChangeListener, setMediaBaseUri, setReadOnly } from './editor';
+import { createEditor, updateContent, createSourceEditor, updateSourceContent, getSourceMarkdown, getCurrentMarkdown, setFrontmatterChangeListener, setMediaBaseUri, setReadOnly, getEditor, getSourceEditor } from './editor';
+import { createFindBar, FindBar } from './findBar';
 import { initTheme, applyTheme, ThemeSetting } from './theme';
 import { setAlwaysDarkDiagram } from './mermaidRenderer';
 import { initTooltips } from './tooltip';
@@ -300,6 +301,7 @@ function init(): void {
   let pendingExternalMarkdown: string | null = null;
   let sourceMode      = false;
   let widthMode: WidthMode = 'normal';
+  let findBar: FindBar | null = null;
 
   function setView(mode: 'preview' | 'source'): void {
     const targetSource = mode === 'source';
@@ -347,6 +349,13 @@ function init(): void {
       // returning to preview, so any external edits applied while in code
       // view are reflected.
       if (editorReady) updateContent(currentMarkdown);
+    }
+
+    // If find is open, move the search over to the now-active editor and clear
+    // it on the one we just left.
+    if (findBar?.isOpen()) {
+      const previousEditor = sourceMode ? getEditor() : getSourceEditor();
+      findBar.retarget(previousEditor);
     }
   }
 
@@ -645,6 +654,10 @@ function init(): void {
       vscode.postMessage({ type: 'openInFinder' });
       closeAllActionsPanels();
     });
+    panel.querySelector<HTMLElement>('.act-find')?.addEventListener('click', () => {
+      closeAllActionsPanels();
+      findBar?.open();
+    });
   }
   bindActions(actionsPanelDots);
   bindActions(actionsPanelFile);
@@ -876,6 +889,20 @@ function init(): void {
       });
       editorReady = true;
       initBoardSidePanel();
+
+      // In-document find. The webview is a custom editor, so VS Code's native
+      // Cmd/Ctrl+F never reaches this content — we run our own find bar over
+      // whichever editor (preview or source) is currently active.
+      findBar = createFindBar({
+        getActiveEditor: () => (sourceMode ? getSourceEditor() : getEditor()),
+      });
+      document.addEventListener('keydown', (e) => {
+        const mod = e.metaKey || e.ctrlKey;
+        if (mod && !e.shiftKey && !e.altKey && (e.key === 'f' || e.key === 'F')) {
+          e.preventDefault();
+          findBar?.open();
+        }
+      });
 
       try {
         const outlineBtn   = document.getElementById('outline-btn') as HTMLElement | null;
