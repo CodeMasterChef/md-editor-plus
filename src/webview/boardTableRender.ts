@@ -11,8 +11,8 @@
 // check (target.closest('.bd-table-host') === this mount's bodyEl). The
 // listener is removed on destroy.
 
-import type { Board, Card, ViewDef, FieldDef } from './boardModel';
-import { getStatusOptions } from './boardModel';
+import type { Board, Card, ViewDef, FieldDef, ColorToken } from './boardModel';
+import { getStatusOptions, autoColorPublic } from './boardModel';
 import type { BoardRendererCtx, BoardRendererOps } from './boardBlock';
 import { buildChip } from './boardSidePanel';
 import { setViewSort, setViewGroup, setViewWidth, setViewColumns, hideFieldInView, addCard, moveCard } from './boardOps';
@@ -391,12 +391,10 @@ export function mountTable(ctx: BoardRendererCtx): BoardRendererOps {
         caretEl.className = 'bd-group-caret';
         caretEl.textContent = collapsedGroups.has(g.key) ? '▸' : '▾';
 
-        // Chip: colored pill matching the Status chip palette.
-        let chipColor = 'gray';
-        if (v.groupBy === 'Status') {
-          const colDef = b.columns.find(c => c.name === g.key);
-          if (colDef) chipColor = colDef.color;
-        }
+        // Color from the grouped field: status option color, tag hash, else neutral.
+        const gc = groupColor(b, v.groupBy!, g.key);
+        const chipColor = gc ?? 'gray';
+        if (gc) row.classList.add('bd-group-band', `color-${gc}`);
         const chip = document.createElement('span');
         chip.className = `board-column-chip color-${chipColor} bd-group-chip`;
         const dot = document.createElement('span');
@@ -676,6 +674,10 @@ export function mountTable(ctx: BoardRendererCtx): BoardRendererOps {
       const card = b.cards.find(c => c.id === cardId);
       if (!card) return;
       // Find the group this card belongs to (matches the rendered grouping).
+      // NOTE: when grouped by a tag, a multi-tag card appears in several buckets;
+      // this resolves to the FIRST matching bucket, so dragging it from another of
+      // its buckets reorders relative to the first. moveCard works on the global
+      // cards array by id (no duplication/loss) — this is a known, accepted limit.
       const group = lastGroups.find(g => g.cards.some(c => c.id === cardId)) ?? { key: '', cards: [card] };
       e.preventDefault();
       e.stopPropagation();
@@ -702,6 +704,18 @@ export function mountTable(ctx: BoardRendererCtx): BoardRendererOps {
   };
 }
 
+/** The color token for a group key, or null for a neutral band. */
+function groupColor(b: Board, field: string, key: string): ColorToken | null {
+  const f = b.fields.find(x => x.name === field);
+  if (!f) return null;
+  if (f.type === 'status') {
+    if (key === 'Uncategorized') return null;
+    return getStatusOptions(b, field).find(o => o.name === key)?.color ?? null;
+  }
+  if (f.type === 'tags' && key !== '—') return autoColorPublic(key);
+  return null;
+}
+
 function applyGroup(cards: Card[], v: ViewDef, b: Board): Group[] {
   if (!v.groupBy) return [{ key: '', cards }];
   const field = v.groupBy;
@@ -709,34 +723,41 @@ function applyGroup(cards: Card[], v: ViewDef, b: Board): Group[] {
   if (!fdef) return [{ key: '', cards }];
 
   const bucket = new Map<string, Card[]>();
-  for (const c of cards) {
-    let key = c.values[field] ?? '';
-    if (field === 'Status' && !b.columns.some(col => col.name === key)) key = 'Uncategorized';
-    if (fdef.type === 'tags') key = (key.split(',')[0] ?? '').trim();
-    key = key || '—';
+  const push = (key: string, c: Card) => {
     const arr = bucket.get(key) ?? [];
     arr.push(c);
     bucket.set(key, arr);
-  }
+  };
+  const alpha = (a: string, c: string) => {
+    if (a === '—') return 1;
+    if (c === '—') return -1;
+    return a.localeCompare(c, undefined, { sensitivity: 'base' });
+  };
 
-  let keys: string[];
-  if (field === 'Status') {
-    // Build keys in board.columns order, including empty groups, then Uncategorized last.
-    for (const col of b.columns) {
-      if (!bucket.has(col.name)) bucket.set(col.name, []);
+  if (fdef.type === 'tags') {
+    for (const c of cards) {
+      const tags = (c.values[field] ?? '').split(',').map(s => s.trim()).filter(Boolean);
+      if (tags.length === 0) push('—', c);
+      else for (const t of tags) push(t, c);
     }
-    keys = b.columns.map(col => col.name);
-    if (bucket.has('Uncategorized')) keys.push('Uncategorized');
-  } else {
-    keys = Array.from(bucket.keys());
-    keys.sort((a, c) => {
-      if (a === '—') return 1;
-      if (c === '—') return -1;
-      return a.localeCompare(c, undefined, { sensitivity: 'base' });
-    });
+    return Array.from(bucket.keys()).sort(alpha).map(k => ({ key: k, cards: bucket.get(k) ?? [] }));
   }
 
-  return keys.map(k => ({ key: k, cards: bucket.get(k) ?? [] }));
+  if (fdef.type === 'status') {
+    const opts = getStatusOptions(b, field);
+    const valid = new Set(opts.map(o => o.name));
+    for (const c of cards) {
+      const raw = c.values[field] ?? '';
+      push(valid.has(raw) ? raw : 'Uncategorized', c);
+    }
+    for (const o of opts) if (!bucket.has(o.name)) bucket.set(o.name, []);
+    const keys = opts.map(o => o.name);
+    if (bucket.has('Uncategorized')) keys.push('Uncategorized');
+    return keys.map(k => ({ key: k, cards: bucket.get(k) ?? [] }));
+  }
+
+  for (const c of cards) push((c.values[field] ?? '') || '—', c);
+  return Array.from(bucket.keys()).sort(alpha).map(k => ({ key: k, cards: bucket.get(k) ?? [] }));
 }
 
 let currentColumnMenuOutside: ((e: MouseEvent) => void) | null = null;
@@ -806,13 +827,24 @@ function openColumnMenu(anchor: HTMLElement, f: FieldDef, ctx: BoardRendererCtx,
     setViewSort(b2, 'table', null);
     ctx.mutate(b2);
   });
-  mkItem(ICON.group, 'Group by this', () => {
-    collapsedGroups.clear();
-    const cur = ctx.getBoard();
-    const b2: Board = { ...cur, views: cur.views.map(v2 => ({ ...v2 })) };
-    setViewGroup(b2, 'table', f.name);
-    ctx.mutate(b2);
-  });
+  const tableGroupBy = ctx.getBoard().views.find(x => x.name === 'table')?.groupBy;
+  if (tableGroupBy === f.name) {
+    mkItem(ICON.group, 'Remove grouping', () => {
+      collapsedGroups.clear();
+      const cur = ctx.getBoard();
+      const b2: Board = { ...cur, views: cur.views.map(v2 => ({ ...v2 })) };
+      setViewGroup(b2, 'table', null);
+      ctx.mutate(b2);
+    });
+  } else {
+    mkItem(ICON.group, 'Group by this', () => {
+      collapsedGroups.clear();
+      const cur = ctx.getBoard();
+      const b2: Board = { ...cur, views: cur.views.map(v2 => ({ ...v2 })) };
+      setViewGroup(b2, 'table', f.name);
+      ctx.mutate(b2);
+    });
+  }
   mkItem(ICON.resetWidth, 'Reset column width', () => {
     const cur = ctx.getBoard();
     const b2: Board = { ...cur, views: cur.views.map(v2 => ({ ...v2 })) };
@@ -883,7 +915,7 @@ function comparatorFor(f: FieldDef, b: Board): (a: string, c: string) => number 
     };
   }
   if (f.type === 'status') {
-    const order = new Map(b.columns.map((col, i) => [col.name, i]));
+    const order = new Map(getStatusOptions(b, f.name).map((col, i) => [col.name, i] as const));
     return (a, c) => (order.get(a) ?? 1e9) - (order.get(c) ?? 1e9);
   }
   if (f.type === 'tags') {
