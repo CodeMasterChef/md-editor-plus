@@ -139,6 +139,11 @@ function autoColor(name: string): ColorToken {
   return COLOR_TOKENS[Math.abs(h) % COLOR_TOKENS.length];
 }
 
+/** Public, stable name→token mapping for color pickers and tag group bands. */
+export function autoColorPublic(name: string): ColorToken {
+  return autoColor(name);
+}
+
 function splitCells(line: string): string[] {
   // Split on '|' but respect escaped '\|'.
   const cells: string[] = [];
