@@ -8,6 +8,7 @@ export interface FieldDef {
   name: string;
   type: FieldType;
   visibleOnCard: boolean;
+  options?: ColumnDef[];   // states for status fields other than the built-in "Status"
 }
 
 export interface ColumnDef {
@@ -42,6 +43,23 @@ export interface Board {
   orphanBodies: { id: string; body: string }[];  // preserved verbatim on round-trip
   views: ViewDef[];
   activeView: string;
+}
+
+/** Read the option list (states) for any status field. */
+export function getStatusOptions(board: Board, fieldName: string): ColumnDef[] {
+  if (fieldName === 'Status') return board.columns;
+  return board.fields.find((f) => f.name === fieldName)?.options ?? [];
+}
+
+/** Return a new Board with the option list for a status field replaced. */
+export function setStatusOptions(board: Board, fieldName: string, options: ColumnDef[]): Board {
+  if (fieldName === 'Status') {
+    return { ...board, columns: options };
+  }
+  return {
+    ...board,
+    fields: board.fields.map((f) => (f.name === fieldName ? { ...f, options } : f)),
+  };
 }
 
 const START_RE = /<!--\s*board:start([\s\S]*?)-->/i;
