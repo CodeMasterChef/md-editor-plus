@@ -2,6 +2,7 @@
 import type { Board, FieldDef, FieldType } from './boardModel';
 import { FIELD_TYPE_ICONS, FIELD_TYPE_LABELS } from './boardIcons';
 import { setViewColumns, hideFieldInView, showFieldInView } from './boardOps';
+import { openStatusOptionsEditor } from './boardStatusOptions';
 
 // ===== Shared field-mutation helpers =====
 // These are used by both the Properties popover (board chrome) and the
@@ -271,6 +272,11 @@ export function openFieldActionMenu(
   };
 
   addItem(ICON_EDIT, 'Rename', '', isLocked, () => options.onRename?.());
+  if (field.type === 'status') {
+    addItem(ICON_EDIT, 'Edit options', '', false, () => {
+      openStatusOptionsEditor(anchor, () => board, field.name, onChange);
+    });
+  }
   if (viewName === 'table') {
     const tableView = board.views.find(x => x.name === 'table');
     const isHiddenInTable = !!tableView?.hidden?.includes(field.name);

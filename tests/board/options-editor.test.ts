@@ -2,7 +2,8 @@
  * @jest-environment jsdom
  */
 import { buildOptionsEditor } from '../../src/webview/boardStatusOptions';
-import type { ColumnDef } from '../../src/webview/boardModel';
+import type { Board, ColumnDef } from '../../src/webview/boardModel';
+import { openFieldActionMenu } from '../../src/webview/boardProperties';
 
 function render(options: ColumnDef[], cb: any) {
   const host = document.createElement('div');
@@ -88,5 +89,36 @@ describe('buildOptionsEditor — rename', () => {
     (host.querySelectorAll('.bd-opt-delete')[1] as HTMLElement).click();
     expect(renamed).toEqual([['Low', 'Minor']]);
     expect(deleted).toEqual(['High']);
+  });
+});
+
+function fieldMenuBoard(): Board {
+  return {
+    id: 'b1', name: '',
+    columns: [{ name: 'Todo', color: 'blue' }],
+    fields: [
+      { name: 'Title',  type: 'text',   visibleOnCard: true },
+      { name: 'Status', type: 'status', visibleOnCard: true },
+      { name: 'Notes',  type: 'text',   visibleOnCard: true },
+    ],
+    cards: [], orphanBodies: [], views: [], activeView: 'kanban',
+  };
+}
+
+describe('field action menu — Edit options', () => {
+  const anchor = () => { const a = document.createElement('button'); document.body.appendChild(a); return a; };
+  const labels = () =>
+    Array.from(document.querySelectorAll('.board-field-action-label')).map((n) => n.textContent);
+
+  it('shows "Edit options" for a status field', () => {
+    const b = fieldMenuBoard();
+    openFieldActionMenu(anchor(), b, b.fields[1], () => {});
+    expect(labels()).toContain('Edit options');
+  });
+
+  it('does NOT show "Edit options" for a non-status field', () => {
+    const b = fieldMenuBoard();
+    openFieldActionMenu(anchor(), b, b.fields[2], () => {});
+    expect(labels()).not.toContain('Edit options');
   });
 });
