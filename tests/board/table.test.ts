@@ -261,6 +261,38 @@ describe('status chip + dropdown', () => {
 
     ops.destroy();
   });
+
+  it('a second status field renders its own options and writes its own value', () => {
+    const board = makeBoard({
+      fields: [
+        { name: 'Title',  type: 'text',   visibleOnCard: true },
+        { name: 'Status', type: 'status', visibleOnCard: true },
+        { name: 'Impact', type: 'status', visibleOnCard: true,
+          options: [{ name: 'Low', color: 'gray' }, { name: 'High', color: 'red' }] },
+      ],
+      cards: [
+        { id: 'c1', values: { id: 'c1', Title: 'Alpha', Status: 'Todo', Impact: 'Low' }, body: '' },
+      ],
+    });
+    const { ctx, boardRef } = makeCtx(board);
+    const ops = mountTable(ctx);
+
+    const impactCell = ctx.root.querySelector(
+      'td.bd-table-cell[data-field="Impact"]',
+    ) as HTMLElement;
+    expect(impactCell).not.toBeNull();
+    impactCell.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+
+    const dropdown = document.querySelector('.board-status-dropdown')!;
+    const options = dropdown.querySelectorAll('.board-status-option');
+    expect(options).toHaveLength(2);
+
+    (options[1] as HTMLElement).dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    expect(boardRef.current.cards[0].values.Impact).toBe('High');
+    expect(boardRef.current.cards[0].values.Status).toBe('Todo');
+
+    ops.destroy();
+  });
 });
 
 // ---------------------------------------------------------------------------

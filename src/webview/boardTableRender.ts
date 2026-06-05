@@ -12,6 +12,7 @@
 // listener is removed on destroy.
 
 import type { Board, Card, ViewDef, FieldDef } from './boardModel';
+import { getStatusOptions } from './boardModel';
 import type { BoardRendererCtx, BoardRendererOps } from './boardBlock';
 import { buildChip } from './boardSidePanel';
 import { setViewSort, setViewGroup, setViewWidth, setViewColumns, hideFieldInView, addCard, moveCard } from './boardOps';
@@ -931,7 +932,8 @@ function renderCell(td: HTMLTableCellElement, card: Card, field: FieldDef, ctx: 
       }
       return;
     case 'status': {
-      const colDef = ctx.getBoard().columns.find(c => c.name === value);
+      const opts = getStatusOptions(ctx.getBoard(), field.name);
+      const colDef = opts.find((c) => c.name === value);
       if (value) {
         td.appendChild(buildChip(value, colDef?.color ?? 'gray'));
       } else {
@@ -943,7 +945,7 @@ function renderCell(td: HTMLTableCellElement, card: Card, field: FieldDef, ctx: 
       if (!ctx.readonly) {
         td.addEventListener('click', (e) => {
           e.stopPropagation();
-          openStatusDropdown(td, card, ctx);
+          openStatusDropdown(td, card, field, ctx);
         });
       }
       return;
@@ -1077,7 +1079,7 @@ function openTagsEditor(anchor: HTMLElement, card: Card, field: FieldDef, ctx: B
 
 let currentStatusOutside: ((e: MouseEvent) => void) | null = null;
 
-function openStatusDropdown(anchor: HTMLElement, card: Card, ctx: BoardRendererCtx): void {
+function openStatusDropdown(anchor: HTMLElement, card: Card, field: FieldDef, ctx: BoardRendererCtx): void {
   document.querySelectorAll('.board-status-dropdown').forEach((n) => n.remove());
   if (currentStatusOutside) {
     document.removeEventListener('mousedown', currentStatusOutside, true);
@@ -1094,7 +1096,7 @@ function openStatusDropdown(anchor: HTMLElement, card: Card, ctx: BoardRendererC
     }
   }
 
-  for (const col of ctx.getBoard().columns) {
+  for (const col of getStatusOptions(ctx.getBoard(), field.name)) {
     const item = document.createElement('button');
     item.type = 'button';
     item.className = 'board-status-option';
@@ -1104,9 +1106,9 @@ function openStatusDropdown(anchor: HTMLElement, card: Card, ctx: BoardRendererC
       const cur = ctx.getBoard();
       ctx.mutate({
         ...cur,
-        cards: cur.cards.map(c =>
+        cards: cur.cards.map((c) =>
           c.id === card.id
-            ? { ...c, values: { ...c.values, Status: col.name } }
+            ? { ...c, values: { ...c.values, [field.name]: col.name } }
             : c,
         ),
       });
