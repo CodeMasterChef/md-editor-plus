@@ -674,6 +674,10 @@ export function mountTable(ctx: BoardRendererCtx): BoardRendererOps {
       const card = b.cards.find(c => c.id === cardId);
       if (!card) return;
       // Find the group this card belongs to (matches the rendered grouping).
+      // NOTE: when grouped by a tag, a multi-tag card appears in several buckets;
+      // this resolves to the FIRST matching bucket, so dragging it from another of
+      // its buckets reorders relative to the first. moveCard works on the global
+      // cards array by id (no duplication/loss) — this is a known, accepted limit.
       const group = lastGroups.find(g => g.cards.some(c => c.id === cardId)) ?? { key: '', cards: [card] };
       e.preventDefault();
       e.stopPropagation();
