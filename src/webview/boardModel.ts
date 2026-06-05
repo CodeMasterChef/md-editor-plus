@@ -242,6 +242,31 @@ function parseFieldTypes(raw: string): Map<string, FieldType> {
   return out;
 }
 
+function parseFieldOptions(raw: string): Map<string, ColumnDef[]> {
+  const out = new Map<string, ColumnDef[]>();
+  if (!raw) return out;
+  for (const chunk of raw.split(';')) {
+    const eq = chunk.indexOf('=');
+    if (eq < 0) continue;
+    const fieldName = chunk.slice(0, eq).trim();
+    if (!fieldName) continue;
+    const opts: ColumnDef[] = [];
+    for (const optChunk of chunk.slice(eq + 1).split('|')) {
+      if (!optChunk) continue;
+      const colon = optChunk.lastIndexOf(':');
+      const name = (colon >= 0 ? optChunk.slice(0, colon) : optChunk).trim();
+      const tok = colon >= 0 ? optChunk.slice(colon + 1).trim() : '';
+      if (!name) continue;
+      const color = COLOR_TOKENS.includes(tok as ColorToken)
+        ? (tok as ColorToken)
+        : autoColor(name);
+      opts.push({ name, color });
+    }
+    out.set(fieldName, opts);
+  }
+  return out;
+}
+
 export function parseBoardSource(source: string): Board {
   const startMatch = source.match(START_RE);
   const attrs = startMatch ? parseAttrs(startMatch[1]) : {};
@@ -279,6 +304,14 @@ export function parseBoardSource(source: string): Board {
       if (!fields.find((f) => f.name === name)) {
         fields.push({ name, type: 'text', visibleOnCard: false });
       }
+    }
+  }
+
+  const fieldOptions = parseFieldOptions(attrs['field-options'] ?? '');
+  for (const f of fields) {
+    if (f.type === 'status' && f.name !== 'Status') {
+      const opts = fieldOptions.get(f.name);
+      if (opts) f.options = opts;
     }
   }
 
@@ -357,6 +390,14 @@ function serializeStartMarker(board: Board): string {
   const colors = board.columns.map((c) => c.color).join('|');
   const fieldTypes = board.fields.map((f) => `${f.name}=${f.type}`).join(',');
 
+  const fieldOptionsParts: string[] = [];
+  for (const f of board.fields) {
+    if (f.type === 'status' && f.name !== 'Status' && f.options && f.options.length) {
+      const opts = f.options.map((o) => `${o.name}:${o.color}`).join('|');
+      fieldOptionsParts.push(`${f.name}=${opts}`);
+    }
+  }
+
   const attrs: string[] = [`id="${board.id}"`];
   if (board.name) attrs.push(`name="${board.name}"`);
   if (board.columns.length) {
@@ -364,6 +405,9 @@ function serializeStartMarker(board: Board): string {
     attrs.push(`column-colors="${colors}"`);
   }
   if (fieldNames.length) attrs.push(`field-types="${fieldTypes}"`);
+  if (fieldOptionsParts.length) {
+    attrs.push(`field-options="${fieldOptionsParts.join(';')}"`);
+  }
   if (hidden.length) attrs.push(`hidden-fields="${hidden.join(',')}"`);
   if (board.activeView && board.activeView !== 'kanban') {
     attrs.push(`active-view="${board.activeView}"`);

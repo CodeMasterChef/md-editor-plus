@@ -79,3 +79,38 @@ describe('status-option mutations migrate card values', () => {
     expect(opts[1].color).not.toBe(opts[0].color);
   });
 });
+
+describe('field-options round-trip', () => {
+  const src = [
+    `<!-- board:start id="b1" columns="Todo|Done" column-colors="blue|emerald" field-types="Title=text,Status=status,Impact=status,Risk Level=status" field-options="Impact=Low:gray|High:red;Risk Level=R1:orange|R2:teal" -->`,
+    ``,
+    `| Title | Status | Impact | Risk Level |`,
+    `|---|---|---|---|`,
+    `| A | Todo | Low | R1 |`,
+    ``,
+    `<!-- board:end -->`,
+  ].join('\n');
+
+  it('parses per-field options, including a field name with a space and new color tokens', () => {
+    const b = parseBoardSource(src);
+    expect(b.fields.find(f => f.name === 'Impact')!.options).toEqual([
+      { name: 'Low', color: 'gray' }, { name: 'High', color: 'red' },
+    ]);
+    expect(b.fields.find(f => f.name === 'Risk Level')!.options).toEqual([
+      { name: 'R1', color: 'orange' }, { name: 'R2', color: 'teal' },
+    ]);
+    expect(b.fields.find(f => f.name === 'Status')!.options).toBeUndefined();
+  });
+
+  it('serialize -> parse is stable (deep-equal)', () => {
+    const a = parseBoardSource(src);
+    const round = parseBoardSource(serializeBoard(a));
+    expect(round).toEqual(a);
+  });
+
+  it('a board with no additional status fields emits no field-options attribute', () => {
+    const plain = `<!-- board:start id="b1" columns="Todo" column-colors="blue" field-types="Title=text,Status=status" -->\n\n| Title | Status |\n|---|---|\n\n<!-- board:end -->`;
+    const out = serializeBoard(parseBoardSource(plain));
+    expect(out).not.toContain('field-options');
+  });
+});
