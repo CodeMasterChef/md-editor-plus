@@ -2,6 +2,7 @@ import {
   COLOR_TOKENS_PUBLIC as PALETTE,
   getStatusOptions,
   addStatusOption, renameStatusOption, recolorStatusOption, deleteStatusOption,
+  addTagOption, renameTagOption, deleteTagOption,
 } from './boardModel';
 import type { Board, ColumnDef, ColorToken } from './boardModel';
 
@@ -131,6 +132,8 @@ export function openStatusOptionsEditor(
   pop.style.top = `${rect.bottom + window.scrollY + 4}px`;
   pop.style.left = `${rect.left + window.scrollX}px`;
 
+  const isTags = () => getBoard().fields.find(f => f.name === fieldName)?.type === 'tags';
+
   const rerender = () => buildOptionsEditor(pop, {
     getOptions: () => getStatusOptions(getBoard(), fieldName),
     onAdd: () => {
@@ -138,12 +141,12 @@ export function openStatusOptionsEditor(
       let label = 'New';
       let counter = 2;
       while (existing.includes(label)) { label = `New ${counter}`; counter++; }
-      onChange(addStatusOption(getBoard(), fieldName, label));
+      onChange(isTags() ? addTagOption(getBoard(), fieldName, label) : addStatusOption(getBoard(), fieldName, label));
       rerender();
     },
-    onRename:  (o, n) => { onChange(renameStatusOption(getBoard(), fieldName, o, n)); rerender(); },
+    onRename:  (o, n) => { onChange(isTags() ? renameTagOption(getBoard(), fieldName, o, n) : renameStatusOption(getBoard(), fieldName, o, n)); rerender(); },
     onRecolor: (n, c) => { onChange(recolorStatusOption(getBoard(), fieldName, n, c)); rerender(); },
-    onDelete:  (n) => { onChange(deleteStatusOption(getBoard(), fieldName, n)); rerender(); },
+    onDelete:  (n) => { onChange(isTags() ? deleteTagOption(getBoard(), fieldName, n) : deleteStatusOption(getBoard(), fieldName, n)); rerender(); },
   });
   rerender();
 

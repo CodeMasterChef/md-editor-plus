@@ -805,7 +805,7 @@ function openColumnMenu(anchor: HTMLElement, f: FieldDef, ctx: BoardRendererCtx,
     requestHeaderRename(f.name);
     ctx.mutate({ ...ctx.getBoard() });
   }, { disabled: isLockedName });
-  if (f.type === 'status') {
+  if (f.type === 'status' || f.type === 'tags') {
     mkItem(ICON.editOptions, 'Edit options', () => {
       openStatusOptionsEditor(anchor, ctx.getBoard, f.name, ctx.mutate);
     });

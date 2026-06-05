@@ -9,6 +9,8 @@ import {
 import type { Board } from '../../src/webview/boardModel';
 import { mountTable } from '../../src/webview/boardTableRender';
 import type { BoardRendererCtx } from '../../src/webview/boardBlock';
+import { openFieldActionMenu } from '../../src/webview/boardProperties';
+import { openStatusOptionsEditor } from '../../src/webview/boardStatusOptions';
 
 function ctxFor(b: Board) {
   const root = document.createElement('div'); document.body.appendChild(root);
@@ -173,5 +175,38 @@ describe('tags picker', () => {
     const f = ref.current.fields.find(x => x.name === 'Tags')!;
     expect(f.options!.map(o => o.name)).toContain('deploy');
     expect(ref.current.cards[0].values.Tags).toBe('backend, deploy');
+  });
+});
+
+describe('Edit options works for tags', () => {
+  const mk = (): Board => ({
+    id:'b1', name:'', columns:[{name:'Todo',color:'blue'}],
+    fields:[
+      { name:'Title', type:'text', visibleOnCard:true },
+      { name:'Status', type:'status', visibleOnCard:true },
+      { name:'Tags', type:'tags', visibleOnCard:true,
+        options:[{name:'backend',color:'teal'},{name:'urgent',color:'red'}] },
+    ],
+    cards:[{ id:'c1', values:{ id:'c1', Title:'A', Status:'Todo', Tags:'backend, urgent' }, body:'' }],
+    orphanBodies:[], views:[], activeView:'kanban',
+  });
+
+  it('shows "Edit options" for a tags field in the field action menu', () => {
+    const b = mk();
+    const a = document.createElement('button'); document.body.appendChild(a);
+    openFieldActionMenu(a, b, b.fields[2], () => {});
+    const labels = Array.from(document.querySelectorAll('.board-field-action-label')).map(n => n.textContent);
+    expect(labels).toContain('Edit options');
+  });
+
+  it('renaming a tag via the editor migrates card values (comma-list aware)', () => {
+    let latest: Board = mk();
+    const a = document.createElement('button'); document.body.appendChild(a);
+    openStatusOptionsEditor(a, () => latest, 'Tags', (n: Board) => { latest = n; });
+    // buildOptionsEditor sets host.className = 'bd-opt-editor' (overwrites 'bd-opt-popover')
+    const nameInput = document.querySelector('.bd-opt-editor .bd-opt-name') as HTMLInputElement;
+    nameInput.focus(); nameInput.value = 'infra'; nameInput.dispatchEvent(new Event('blur'));
+    expect(latest.fields.find(f => f.name === 'Tags')!.options!.map(o => o.name)).toEqual(['infra', 'urgent']);
+    expect(latest.cards[0].values.Tags).toBe('infra, urgent');
   });
 });
