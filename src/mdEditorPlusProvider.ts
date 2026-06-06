@@ -3,6 +3,7 @@ import * as os from 'os';
 import * as path from 'path';
 import * as fs from 'fs';
 import { spawn } from 'child_process';
+import { MARKDOWN_EXTENSIONS, isMarkdownPath, resolveClipboardCandidates } from './openPath';
 
 const CHROME_PATHS: Record<NodeJS.Platform, string[]> = {
   darwin: [
@@ -128,6 +129,14 @@ export class MdEditorPlusProvider implements vscode.CustomTextEditorProvider {
       });
     };
 
+    const openMarkdownInEditor = async (uri: vscode.Uri): Promise<void> => {
+      if (!isMarkdownPath(uri.fsPath)) {
+        await vscode.window.showErrorMessage("MD Editor Plus: that doesn't look like a markdown file.");
+        return;
+      }
+      await vscode.commands.executeCommand('vscode.openWith', uri, 'md-editor-plus.editor');
+    };
+
     const onDocChange = vscode.workspace.onDidChangeTextDocument((e) => {
       if (e.document.uri.toString() !== document.uri.toString()) return;
       if (this._isApplyingEdit) return;
@@ -195,6 +204,68 @@ export class MdEditorPlusProvider implements vscode.CustomTextEditorProvider {
       }
       if (msg.type === 'openInFinder') {
         await vscode.commands.executeCommand('revealFileInOS', document.uri);
+      }
+      if (msg.type === 'openFromClipboard') {
+        const raw = (await vscode.env.clipboard.readText()).trim();
+        if (!raw) {
+          await vscode.window.showErrorMessage('MD Editor Plus: clipboard is empty.');
+          return;
+        }
+        const docFolder = path.dirname(document.uri.fsPath);
+        const ws = vscode.workspace.getWorkspaceFolder(document.uri);
+        const candidates = resolveClipboardCandidates(raw, docFolder, ws?.uri.fsPath);
+        let found: vscode.Uri | null = null;
+        for (const c of candidates) {
+          const uri = vscode.Uri.file(c);
+          try {
+            await vscode.workspace.fs.stat(uri);
+            found = uri;
+            break;
+          } catch { /* try next candidate */ }
+        }
+        if (!found) {
+          await vscode.window.showErrorMessage(`MD Editor Plus: no file found at ${raw}`);
+          return;
+        }
+        await openMarkdownInEditor(found);
+        return;
+      }
+      if (msg.type === 'browseMarkdown') {
+        const exts = MARKDOWN_EXTENSIONS.map((e) => e.replace(/^\./, ''));
+        const files = await vscode.workspace.findFiles(`**/*.{${exts.join(',')}}`);
+        const BROWSE = '$(folder-opened) Browse on disk…';
+        type Item = vscode.QuickPickItem & { uri?: vscode.Uri };
+        const items: Item[] = [
+          { label: BROWSE, alwaysShow: true },
+          ...files
+            .slice()
+            .sort((a, b) => a.fsPath.localeCompare(b.fsPath))
+            .map((uri) => ({
+              label: path.basename(uri.fsPath),
+              detail: vscode.workspace.asRelativePath(uri),
+              uri,
+            })),
+        ];
+        const pick = await vscode.window.showQuickPick(items, {
+          title: 'Open Markdown File',
+          placeHolder: 'Pick a markdown file, or browse on disk…',
+          matchOnDetail: true,
+        });
+        if (!pick) return;
+        if (pick.label === BROWSE) {
+          const chosen = await vscode.window.showOpenDialog({
+            canSelectFiles: true,
+            canSelectFolders: false,
+            canSelectMany: false,
+            filters: { Markdown: exts },
+            title: 'Open Markdown File',
+            openLabel: 'Open',
+          });
+          if (chosen && chosen[0]) await openMarkdownInEditor(chosen[0]);
+          return;
+        }
+        if (pick.uri) await openMarkdownInEditor(pick.uri);
+        return;
       }
       if (msg.type === 'openExternal') {
         const url = (msg as unknown as { url?: unknown }).url;
