@@ -4,7 +4,7 @@
 
 Open any Markdown file and it renders as polished, block-based content. Click anywhere to edit, drag blocks to reorder, slash to insert. Your file stays plain Markdown on disk, so it works with every other tool in your pipeline.
 
-![MD Editor Plus](media/Md-editor-plus02.gif)---
+![MD Editor Plus](media/Md-editor-plus02.gif)\---
 
 ## Why use it
 
@@ -431,4 +431,4 @@ See [CHANGELOG.md](CHANGELOG.md).
 
 ---
 
-Made by **Aviran Revach** — [GitHub](https://github.com/aviranrevach)
+Made by **Aviran Revach** [GitHub](https://github.com/aviranrevach)

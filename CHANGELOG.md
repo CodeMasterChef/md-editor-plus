@@ -6,6 +6,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.4] - 2026-06-06
+
+### Changed
+
+- **README refresh** — replaced the static hero image with an animated walkthrough GIF (linking through to the full video), added a Kanban-board demo GIF under the Boards section and a Table-board screenshot under Table view, swapped the ASCII toolbar diagram for a real screenshot, added "see below" jump-links on the showpiece features (Boards, Mermaid), and added a footer credit. Documentation only — no code changes.
+
+## [0.5.3] - 2026-06-05
+
 ### Added
 
 - **Multiple status columns** — a board is no longer limited to one Status. Add any number of `status` columns (e.g. *Impact*, *Priority*), each owning its own set of states with colors. Edit a column's states (add / rename / recolor / delete) from three places — the new-column popover (set them at creation), the column header `⋯`, and the property `⋯` in the More panel — all opening the same options editor. Clicking a state now sets the column you clicked, independently of Status (previously every status cell wrote to a hardcoded `Status` field). Each extra column's states persist via a new `field-options` attribute on `board:start`; existing boards open unchanged.
@@ -24,6 +32,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **Searches inside boards too** — card titles, body previews, visible field/tag values, column names, and the board name. A board is an atom node that renders its own DOM and tells ProseMirror to ignore mutations inside it, so board matches are painted with the **CSS Custom Highlight API** (no DOM mutation — safe alongside the board's re-renders) and the matched card is scrolled into view. A coordinator merges ProseMirror and board matches into one list ordered top-to-bottom, so the count and Enter/Shift+Enter navigation flow through everything in visual order. (If the runtime lacks the Highlight API, board matches just aren't highlighted; the rest of search still works.)
   - Case-insensitive plain-text matching (no regex/replace in this version).
   - Match-finding is a pure function ([src/webview/search.ts](src/webview/search.ts)); board DOM scanning is covered by jsdom tests. See [tests/search.test.ts](tests/search.test.ts) and [tests/boardSearch.test.ts](tests/boardSearch.test.ts).
+
+### Fixed
+
+- **Webview init-race blank screen** — the webview occasionally rendered blank on reload because init could fire before the host was ready. Added a handshake so the editor waits for the host before initializing, eliminating the intermittent blank screen.
 
 ## [0.5.2] - 2026-06-02
 

@@ -24,8 +24,10 @@ demo-*.md
 PUBLISHING.md
 .playwright-mcp/**
 .claude/**
-/*.png
+*.png
 media/icon.svg
 media/header.svg
 media/claude-icon.svg
 media/demo.*
+media/*.webm
+media/*.mov
