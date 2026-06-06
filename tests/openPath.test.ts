@@ -26,7 +26,7 @@ describe('resolveClipboardCandidates', () => {
   });
   it('returns one normalized candidate for an absolute path', () => {
     expect(resolveClipboardCandidates('/tmp/a/../foo.md', doc, ws)).toEqual([
-      path.normalize('/tmp/a/../foo.md'),
+      '/tmp/foo.md',
     ]);
   });
   it('resolves a relative path against the doc folder first, then workspace', () => {
@@ -42,7 +42,17 @@ describe('resolveClipboardCandidates', () => {
   });
   it('strips a file:// scheme', () => {
     expect(resolveClipboardCandidates('file:///tmp/foo.md', doc, ws)).toEqual([
-      path.normalize('/tmp/foo.md'),
+      '/tmp/foo.md',
+    ]);
+  });
+  it('deduplicates when docFolder equals workspaceRoot', () => {
+    expect(resolveClipboardCandidates('foo.md', '/home/me/project', '/home/me/project')).toEqual([
+      path.resolve('/home/me/project', 'foo.md'),
+    ]);
+  });
+  it('decodes percent-encoded characters in a file:// URL', () => {
+    expect(resolveClipboardCandidates('file:///tmp/my%20notes/foo.md', doc, ws)).toEqual([
+      '/tmp/my notes/foo.md',
     ]);
   });
 });
