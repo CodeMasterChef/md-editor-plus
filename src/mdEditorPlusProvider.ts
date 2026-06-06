@@ -181,9 +181,25 @@ export class MdEditorPlusProvider implements vscode.CustomTextEditorProvider {
     const onDocChange = vscode.workspace.onDidChangeTextDocument((e) => {
       if (e.document.uri.toString() !== document.uri.toString()) return;
       if (this._isApplyingEdit) return;
+      const text = document.getText();
+      // Diagnostic for the empty-on-open data-loss bug: capture WHEN an empty
+      // 'update' is about to be pushed to the webview, and what change caused it.
+      // The webview-side guard now refuses to apply such an update over content;
+      // this log lets us confirm the trigger (host edit vs external change).
+      if (text.trim() === '') {
+        console.warn('[md-editor-plus] onDidChangeTextDocument → posting EMPTY update', {
+          uri: document.uri.toString(),
+          isDirty: document.isDirty,
+          changes: e.contentChanges.map((c) => ({
+            insertedChars: c.text.length,
+            removedRange: `${c.range.start.line}:${c.range.start.character}-${c.range.end.line}:${c.range.end.character}`,
+          })),
+          reason: e.reason,
+        });
+      }
       webviewPanel.webview.postMessage({
         type: 'update',
-        markdown: document.getText(),
+        markdown: text,
       });
     });
 
@@ -563,6 +579,16 @@ export class MdEditorPlusProvider implements vscode.CustomTextEditorProvider {
   }
 
   private async _applyEdit(document: vscode.TextDocument, markdown: string): Promise<void> {
+    // Diagnostic for the empty-on-open data-loss bug: a webview 'edit'/'save'
+    // that would replace existing content with nothing is the prime suspect for
+    // the on-disk wipe. Log it (with a stack) so we can trace which path sent it.
+    if (markdown.trim() === '' && document.getText().trim() !== '') {
+      console.warn('[md-editor-plus] _applyEdit replacing NON-EMPTY document with EMPTY', {
+        uri: document.uri.toString(),
+        prevChars: document.getText().length,
+        stack: new Error().stack,
+      });
+    }
     const edit = new vscode.WorkspaceEdit();
     edit.replace(
       document.uri,
