@@ -306,6 +306,8 @@ function init(): void {
     renderSaveIndicator(flash);
   }
 
+  renderSaveIndicator(false); // show "✓ Saved" from the moment the file opens
+
   function showConflictBanner(): void {
     conflictBanner.classList.add('visible');
     document.documentElement.classList.add('conflict-active');
