@@ -697,13 +697,13 @@ function init(): void {
     const fullWidth = widthMode === 'full';
     return { filename, themeClasses, editorClasses, pageWidthPx, fullWidth };
   }
-  submenuExport.querySelector<HTMLElement>('.act-export-html')?.addEventListener('click', () => {
+  submenuExport?.querySelector<HTMLElement>('.act-export-html')?.addEventListener('click', () => {
     const ctx = buildExportContext();
     const html = buildHtmlExport(editorEl, ctx);
     vscode.postMessage({ type: 'exportHtml', html });
     closeAllActionsPanels();
   });
-  submenuExport.querySelector<HTMLElement>('.act-export-pdf')?.addEventListener('click', () => {
+  submenuExport?.querySelector<HTMLElement>('.act-export-pdf')?.addEventListener('click', () => {
     const ctx = buildExportContext();
     const html = buildHtmlExport(editorEl, ctx);
     vscode.postMessage({ type: 'exportPdf', html, filename: ctx.filename });
