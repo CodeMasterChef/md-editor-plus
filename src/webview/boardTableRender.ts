@@ -12,7 +12,7 @@
 // listener is removed on destroy.
 
 import type { Board, Card, ViewDef, FieldDef, ColorToken } from './boardModel';
-import { getStatusOptions, autoColorPublic } from './boardModel';
+import { getStatusOptions, autoColorPublic, mintCardId } from './boardModel';
 import type { BoardRendererCtx, BoardRendererOps } from './boardBlock';
 import { buildChip } from './boardSidePanel';
 import { setViewSort, setViewGroup, setViewWidth, setViewColumns, hideFieldInView, addCard, moveCard } from './boardOps';
@@ -274,7 +274,7 @@ export function mountTable(ctx: BoardRendererCtx): BoardRendererOps {
     colgroup.appendChild(gutterCol);
     for (const f of visibleFields) {
       const col = document.createElement('col');
-      col.style.width = `${widths[f.name] ?? 160}px`;
+      col.style.width = `${widths[f.name] ?? (f.name === 'id' ? 64 : 160)}px`;
       colgroup.appendChild(col);
     }
     table.appendChild(colgroup);
@@ -960,6 +960,19 @@ function renderCell(td: HTMLTableCellElement, card: Card, field: FieldDef, ctx: 
       td.title = 'Click to edit';
       td.addEventListener('click', () => ctx.openSidePanel(card.id));
     }
+    return;
+  }
+  // The `id` field is internal plumbing. Always show the card's canonical id,
+  // never editable (clicking does nothing) but selectable/copyable, and styled
+  // as a muted system field. Backfill a missing id so the cell is never blank.
+  if (field.name === 'id') {
+    if (!card.id) {
+      const minted = mintCardId(ctx.getBoard().cards.map(c => c.id));
+      card.id = minted;
+      card.values.id = minted;
+    }
+    td.textContent = card.id;
+    td.classList.add('bd-cell-id');
     return;
   }
   const value = card.values[field.name] ?? '';
