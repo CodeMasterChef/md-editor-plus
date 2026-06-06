@@ -49,6 +49,18 @@ describe('createFlushableDebounce', () => {
     d.cancel();
     jest.advanceTimersByTime(500);
     expect(fn).not.toHaveBeenCalled();
+    expect(d.pending()).toBe(false);
+  });
+
+  it('can be re-scheduled and fire again after a flush', () => {
+    const fn = jest.fn();
+    const d = createFlushableDebounce(fn, 500);
+    d.schedule();
+    d.flush();
+    expect(fn).toHaveBeenCalledTimes(1);
+    d.schedule();
+    jest.advanceTimersByTime(500);
+    expect(fn).toHaveBeenCalledTimes(2);
   });
 
   it('pending() reflects whether a callback is queued', () => {
