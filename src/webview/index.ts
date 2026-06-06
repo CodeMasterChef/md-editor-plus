@@ -569,6 +569,7 @@ function init(): void {
   function openSubmenu(trigger: HTMLElement): void {
     clearSubmenuTimers();
     const sub = submenuElFor(trigger);
+    if (!sub) return;
     // Close any other submenu that's currently showing.
     if (openSubmenuEl && openSubmenuEl !== sub) openSubmenuEl.classList.add('hidden');
     submenuAnchor = trigger;
@@ -791,13 +792,13 @@ function init(): void {
     if (!actionsPanelDots.classList.contains('hidden')
         && !actionsPanelDots.contains(t)
         && !actionsBtn.contains(t)
-        && !submenuExport.contains(t)) {
+        && !(t instanceof Element && t.closest('.actions-submenu'))) {
       closeDotsPanel();
     }
     if (!actionsPanelFile.classList.contains('hidden')
         && !actionsPanelFile.contains(t)
         && !(filenameEl?.contains(t))
-        && !submenuExport.contains(t)) {
+        && !(t instanceof Element && t.closest('.actions-submenu'))) {
       closeFilenamePanel();
     }
   });
