@@ -763,3 +763,71 @@ describe('column-header ⋯ menu Edit options item', () => {
     ops.destroy();
   });
 });
+
+describe('id cell is read-only (c17)', () => {
+  function boardWithId(): Board {
+    return {
+      id: 'b1', name: 'B',
+      columns: [{ name: 'Todo', color: 'blue' }, { name: 'Doing', color: 'amber' }],
+      fields: [
+        { name: 'Title', type: 'text', visibleOnCard: true },
+        { name: 'Status', type: 'status', visibleOnCard: true },
+        { name: 'id', type: 'text', visibleOnCard: true },
+      ],
+      cards: [
+        { id: 'C1', values: { id: 'C1', Title: 'Alpha', Status: 'Todo' }, body: '' },
+      ],
+      orphanBodies: [], views: [], activeView: 'table',
+    };
+  }
+
+  it('shows the canonical card.id and tags the cell as bd-cell-id', () => {
+    const { ctx } = makeCtx(boardWithId());
+    mountTable(ctx);
+    const cell = ctx.root.querySelector('td[data-field="id"]') as HTMLElement;
+    expect(cell).toBeTruthy();
+    expect(cell.textContent).toBe('C1');
+    expect(cell.classList.contains('bd-cell-id')).toBe(true);
+  });
+
+  it('does not enter edit mode on click', () => {
+    const { ctx } = makeCtx(boardWithId());
+    mountTable(ctx);
+    const cell = ctx.root.querySelector('td[data-field="id"]') as HTMLElement;
+    cell.click();
+    expect(cell.getAttribute('contenteditable')).not.toBe('true');
+    expect(cell.classList.contains('bd-cell-editing')).toBe(false);
+    expect(cell.textContent).toBe('C1');
+  });
+
+  it('backfills a missing id from the canonical scheme', () => {
+    const b = boardWithId();
+    b.cards[0].id = '';
+    b.cards[0].values.id = '';
+    const { ctx } = makeCtx(b);
+    mountTable(ctx);
+    const cell = ctx.root.querySelector('td[data-field="id"]') as HTMLElement;
+    expect(cell.textContent).toBe('C1'); // no other numeric ids -> C1
+  });
+
+  it('defaults the id column to a compact 64px width', () => {
+    const { ctx } = makeCtx(boardWithId());
+    mountTable(ctx);
+    const ths = [...ctx.root.querySelectorAll('thead tr th')] as HTMLElement[];
+    const idx = ths.findIndex(th => th.dataset.field === 'id');
+    expect(idx).toBeGreaterThan(0);
+    const cols = ctx.root.querySelectorAll('colgroup col');
+    expect((cols[idx] as HTMLElement).style.width).toBe('64px');
+  });
+
+  it('honors an explicit saved width over the compact default', () => {
+    const b = boardWithId();
+    b.views = [{ name: 'table', widths: { id: 120 } }];
+    const { ctx } = makeCtx(b);
+    mountTable(ctx);
+    const ths = [...ctx.root.querySelectorAll('thead tr th')] as HTMLElement[];
+    const idx = ths.findIndex(th => th.dataset.field === 'id');
+    const cols = ctx.root.querySelectorAll('colgroup col');
+    expect((cols[idx] as HTMLElement).style.width).toBe('120px');
+  });
+});
