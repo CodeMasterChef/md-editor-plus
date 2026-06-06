@@ -257,8 +257,10 @@ export function createSourceEditor(
       _sourceEditDebounce?.schedule();
     },
     onBlur() {
-      // Flush on blur so Code-view edits reach the host immediately.
-      _sourceEditDebounce?.flush();
+      // Flush on blur so Code-view edits reach the host immediately. Guard on
+      // the suppress flag for symmetry with onUpdate — a blur during a
+      // programmatic setContent must not push content back as a user edit.
+      if (!_suppressSourceUpdate) _sourceEditDebounce?.flush();
     },
   });
   _sourceEditDebounce = createFlushableDebounce(() => {
