@@ -106,6 +106,7 @@ export class MdEditorPlusProvider implements vscode.CustomTextEditorProvider {
     const AUTO_SAVE_MS = 1000;
     let autoSaveTimer: ReturnType<typeof setTimeout> | null = null;
     let conflictPaused = false;
+    let flashNextSave = false;
 
     const postSaveState = (state: 'saving' | 'saved' | 'failed', flash = false): void => {
       void webviewPanel.webview.postMessage({ type: 'saveState', state, flash });
