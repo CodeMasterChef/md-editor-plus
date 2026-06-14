@@ -75,18 +75,33 @@ export function createAnnotationStore(): AnnotationStore {
 /**
  * Serialize annotations to the clipboard payload pasted into an AI agent.
  * Excerpts are produced on demand by `quoteAt` (re-read from the live doc so
- * post-annotation edits are reflected).
+ * post-annotation edits are reflected). When `lineAt` is supplied, each item is
+ * tagged with its source line range (e.g. `[L12-L18]`) so the AI knows where in
+ * the file the passage lives.
  */
 export function serializeAnnotations(
   anns: Annotation[],
-  opts: { path: string; quoteAt: (from: number, to: number) => string },
+  opts: {
+    path: string;
+    quoteAt: (from: number, to: number) => string;
+    lineAt?: (from: number, to: number) => { startLine: number | null; endLine: number | null };
+  },
 ): string {
   if (anns.length === 0) return '';
+
+  const locTag = (a: Annotation): string => {
+    if (!opts.lineAt) return '';
+    const { startLine, endLine } = opts.lineAt(a.from, a.to);
+    if (startLine == null) return '';
+    const range = endLine != null && endLine !== startLine ? `L${startLine}-L${endLine}` : `L${startLine}`;
+    return `[${range}] `;
+  };
+
   const ordered = [...anns].sort((a, b) => a.from - b.from);
   const blocks = ordered.map((a, i) => {
     const lines = opts.quoteAt(a.from, a.to).split('\n');
     const quoted = lines
-      .map((line, idx) => (idx === 0 ? `${i + 1}. > ${line}` : `   > ${line}`))
+      .map((line, idx) => (idx === 0 ? `${i + 1}. ${locTag(a)}> ${line}` : `   > ${line}`))
       .join('\n');
     return `${quoted}\n   comment: ${a.comment}`;
   });

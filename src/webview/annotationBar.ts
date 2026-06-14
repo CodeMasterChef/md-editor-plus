@@ -8,6 +8,7 @@ import type { Editor } from '@tiptap/core';
 import type { AnnotationStore } from './annotationStore';
 import { serializeAnnotations } from './annotationStore';
 import { getDocumentPath, copyToClipboard } from './docContext';
+import { locateAnchors } from './aiSelection';
 
 export interface AnnotationBar {
   toggle(): void;
@@ -22,8 +23,9 @@ export function createAnnotationBar(opts: {
   editor: Editor;
   barEl: HTMLElement;
   store: AnnotationStore;
+  getMarkdown: () => string;
 }): AnnotationBar {
-  const { editor, barEl, store } = opts;
+  const { editor, barEl, store, getMarkdown } = opts;
   let userHidden = false;
 
   const quoteAt = (from: number, to: number): string => {
@@ -31,6 +33,14 @@ export function createAnnotationBar(opts: {
     const f = Math.max(0, Math.min(from, size));
     const t = Math.max(f, Math.min(to, size));
     return editor.state.doc.textBetween(f, t, '\n', ' ');
+  };
+
+  // Derive 1-based source line numbers by locating the excerpt's first and last
+  // line in the saved markdown (same approach the AI-transform feature uses).
+  const lineAt = (from: number, to: number): { startLine: number | null; endLine: number | null } => {
+    const lines = quoteAt(from, to).split('\n').map((l) => l.trim()).filter(Boolean);
+    if (lines.length === 0) return { startLine: null, endLine: null };
+    return locateAnchors(getMarkdown(), lines[0], lines[lines.length - 1]);
   };
 
   barEl.innerHTML = `
@@ -55,7 +65,7 @@ export function createAnnotationBar(opts: {
     const act = (e.target as HTMLElement).closest<HTMLElement>('[data-act]')?.dataset.act;
     if (act === 'copy') {
       const n = store.list().length;
-      const text = serializeAnnotations(store.list(), { path: getDocumentPath(), quoteAt });
+      const text = serializeAnnotations(store.list(), { path: getDocumentPath(), quoteAt, lineAt });
       if (!text) return;
       copyToClipboard(text, `Copied ${n} annotation${n === 1 ? '' : 's'} — cleared`);
       // By default, copying hands the annotations off to the AI and clears them.

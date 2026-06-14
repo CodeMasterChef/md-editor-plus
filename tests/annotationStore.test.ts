@@ -104,4 +104,28 @@ describe('serializeAnnotations', () => {
       '   comment: c'
     );
   });
+
+  test('lineAt tags each item with its source line range', () => {
+    const anns: Annotation[] = [
+      { id: 'a1', from: 5, to: 10, comment: 'first' },
+      { id: 'a2', from: 40, to: 50, comment: 'second' },
+    ];
+    const lineAt = (from: number) =>
+      from === 5 ? { startLine: 12, endLine: 18 } : { startLine: 30, endLine: 30 };
+    const out = serializeAnnotations(anns, { path: 'docs/plan.md', quoteAt, lineAt });
+    expect(out).toBe(
+      'Re: docs/plan.md\n\n' +
+      '1. [L12-L18] > Q5-10\n' +
+      '   comment: first\n\n' +
+      '2. [L30] > Q40-50\n' +
+      '   comment: second'
+    );
+  });
+
+  test('lineAt with unknown start line omits the tag for that item', () => {
+    const anns: Annotation[] = [{ id: 'a1', from: 5, to: 10, comment: 'c' }];
+    const lineAt = () => ({ startLine: null, endLine: null });
+    const out = serializeAnnotations(anns, { path: 'f.md', quoteAt, lineAt });
+    expect(out).toBe('Re: f.md\n\n1. > Q5-10\n   comment: c');
+  });
 });

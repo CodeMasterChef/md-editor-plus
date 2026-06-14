@@ -1031,6 +1031,7 @@ function init(): void {
             editor: editorInstance,
             barEl: annBar,
             store,
+            getMarkdown: getCurrentMarkdown,
           });
           annBtn?.addEventListener('click', () => bar.toggle());
           document.addEventListener('mdep:open-annotations', () => bar.setVisible(true));
