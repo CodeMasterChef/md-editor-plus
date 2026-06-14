@@ -136,8 +136,10 @@ export function createEditor(
       SearchExtension,
       createAnnotationExtension({
         store: _annotationStore,
-        onBadgeClick: (id) => {
-          document.dispatchEvent(new CustomEvent('mdep:focus-annotation', { detail: { id } }));
+        onBadgeClick: (id, rect) => {
+          document.dispatchEvent(new CustomEvent('mdep:focus-annotation', {
+            detail: { id, x: rect.left, y: rect.bottom + 6 },
+          }));
         },
       }),
       GlobalDragHandle.configure({ dragHandleWidth: 48 }),

@@ -14,7 +14,7 @@ export const annotationPluginKey = new PluginKey('mdepAnnotations');
 // store mutation that did not change the document.
 export const ANNOTATION_REFRESH = 'mdep-annotation-refresh';
 
-function makeBadge(num: number, id: string, onClick: (id: string) => void): HTMLElement {
+function makeBadge(num: number, id: string, onClick: (id: string, rect: DOMRect) => void): HTMLElement {
   const el = document.createElement('span');
   el.className = 'mdep-annotation-badge';
   el.textContent = String(num);
@@ -22,12 +22,12 @@ function makeBadge(num: number, id: string, onClick: (id: string) => void): HTML
   el.addEventListener('mousedown', (e) => {
     e.preventDefault();
     e.stopPropagation();
-    onClick(id);
+    onClick(id, el.getBoundingClientRect());
   });
   return el;
 }
 
-function build(doc: PMNode, store: AnnotationStore, onBadgeClick: (id: string) => void): DecorationSet {
+function build(doc: PMNode, store: AnnotationStore, onBadgeClick: (id: string, rect: DOMRect) => void): DecorationSet {
   const size = doc.content.size;
   const decos: Decoration[] = [];
   store.list().forEach((a, i) => {
@@ -45,7 +45,7 @@ function build(doc: PMNode, store: AnnotationStore, onBadgeClick: (id: string) =
 
 export function createAnnotationExtension(opts: {
   store: AnnotationStore;
-  onBadgeClick: (id: string) => void;
+  onBadgeClick: (id: string, rect: DOMRect) => void;
 }): Extension {
   const { store, onBadgeClick } = opts;
   return Extension.create({

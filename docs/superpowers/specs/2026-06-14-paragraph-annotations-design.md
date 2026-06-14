@@ -27,7 +27,12 @@ the document) so the `.md` file stays byte-for-byte clean.
   persistence, no sidecar file, no markup in `.md`.
 - **Copy format:** numbered Markdown with blockquoted excerpt (see below).
 - **Display:** inline highlight + numbered badge in the document, plus a
-  right-side panel listing all annotations.
+  floating action bar at the bottom-right (count · Copy all · Clear) that
+  auto-shows when ≥1 annotation exists. (Revised 2026-06-14 from the original
+  right-side sidebar panel — the sidebar was replaced by the floating bar per
+  the agentation reference. Per-annotation edit/delete is done by clicking a
+  badge in the document, which opens a small popover with the editable comment
+  and a Delete button.)
 - **Entry points:** a `💬 Comment` button in the existing bubble menu, plus a
   keyboard shortcut `Cmd/Ctrl+Opt+M` on a non-empty selection.
 - **Panel toggle:** a button in the top editor toolbar (next to the existing

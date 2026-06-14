@@ -11,8 +11,8 @@ import { setSmartTypographyEnabled } from './extensions/smartTypography';
 import { initTooltips } from './tooltip';
 import { buildHtmlExport } from './exportHtml';
 import { createOutlinePanel, OutlinePanel } from './outlinePanel';
-import { createAnnotationPanel, AnnotationPanel } from './annotationPanel';
-import { promptComment } from './annotationInput';
+import { createAnnotationBar, AnnotationBar } from './annotationBar';
+import { promptComment, promptCommentEdit } from './annotationInput';
 import { initBoardSidePanel } from './boardSidePanel';
 import { setDocumentPath, setWorkspaceName } from './docContext';
 import { createSkillPanel } from './skillPanel';
@@ -1024,20 +1024,30 @@ function init(): void {
 
       try {
         const annBtn = document.getElementById('annotation-btn') as HTMLElement | null;
-        const annPanel = document.getElementById('annotation-panel') as HTMLElement | null;
-        if (annBtn && annPanel) {
+        const annBar = document.getElementById('annotation-bar') as HTMLElement | null;
+        if (annBar) {
           const store = getAnnotationStore();
-          const panel: AnnotationPanel = createAnnotationPanel({
+          const bar: AnnotationBar = createAnnotationBar({
             editor: editorInstance,
-            panelEl: annPanel,
-            toggleBtn: annBtn,
+            barEl: annBar,
             store,
           });
-          annBtn.addEventListener('click', () => panel.toggle());
-          document.addEventListener('mdep:open-annotations', () => panel.setVisible(true));
-          document.addEventListener('mdep:focus-annotation', (e) => {
-            const id = (e as CustomEvent).detail?.id as string | undefined;
-            if (id) panel.focus(id);
+          annBtn?.addEventListener('click', () => bar.toggle());
+          document.addEventListener('mdep:open-annotations', () => bar.setVisible(true));
+          // Click a badge in the document → edit/delete that annotation.
+          document.addEventListener('mdep:focus-annotation', async (e) => {
+            const detail = (e as CustomEvent).detail as { id?: string; x?: number; y?: number } | undefined;
+            const id = detail?.id;
+            if (!id) return;
+            const ann = store.list().find((a) => a.id === id);
+            if (!ann) return;
+            const res = await promptCommentEdit({
+              x: detail?.x ?? window.innerWidth / 2,
+              y: detail?.y ?? window.innerHeight / 2,
+              initial: ann.comment,
+            });
+            if (res.action === 'save') store.update(id, res.value);
+            else if (res.action === 'delete') store.remove(id);
           });
           document.addEventListener('keydown', async (e) => {
             const mod = e.metaKey || e.ctrlKey;
@@ -1058,7 +1068,7 @@ function init(): void {
               if (comment) {
                 store.add(from, to, comment);
                 // Decoration refresh is handled centrally via store.subscribe in editor.ts.
-                panel.setVisible(true);
+                bar.setVisible(true);
               }
             }
           });
