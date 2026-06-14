@@ -9,6 +9,8 @@ export interface Annotation {
   comment: string;
 }
 
+export type AnnotationChangeOrigin = 'user' | 'map';
+
 export interface AnnotationStore {
   list(): Annotation[];
   add(from: number, to: number, comment: string): Annotation;
@@ -20,15 +22,15 @@ export interface AnnotationStore {
    * range collapses (from >= to) are dropped. Returns true if anything changed.
    */
   map(mapPos: (pos: number, assoc?: number) => number): boolean;
-  subscribe(fn: () => void): () => void;
+  subscribe(fn: (origin: AnnotationChangeOrigin) => void): () => void;
 }
 
 export function createAnnotationStore(): AnnotationStore {
   let counter = 0;
   let items: Annotation[] = [];
-  const subs = new Set<() => void>();
+  const subs = new Set<(origin: AnnotationChangeOrigin) => void>();
 
-  const emit = (): void => { subs.forEach((fn) => fn()); };
+  const emit = (origin: AnnotationChangeOrigin): void => { subs.forEach((fn) => fn(origin)); };
   const sorted = (): Annotation[] => [...items].sort((a, b) => a.from - b.from);
 
   return {
@@ -36,19 +38,19 @@ export function createAnnotationStore(): AnnotationStore {
     add(from, to, comment) {
       const ann: Annotation = { id: `a${++counter}`, from, to, comment };
       items.push(ann);
-      emit();
+      emit('user');
       return ann;
     },
     update(id, comment) {
       const ann = items.find((x) => x.id === id);
-      if (ann) { ann.comment = comment; emit(); }
+      if (ann) { ann.comment = comment; emit('user'); }
     },
     remove(id) {
       const next = items.filter((x) => x.id !== id);
-      if (next.length !== items.length) { items = next; emit(); }
+      if (next.length !== items.length) { items = next; emit('user'); }
     },
     clear() {
-      if (items.length) { items = []; emit(); }
+      if (items.length) { items = []; emit('user'); }
     },
     map(mapPos) {
       let changed = false;
@@ -60,7 +62,7 @@ export function createAnnotationStore(): AnnotationStore {
         if (from !== a.from || to !== a.to) changed = true;
         next.push({ ...a, from, to });
       }
-      if (changed) { items = next; emit(); }
+      if (changed) { items = next; emit('map'); }
       return changed;
     },
     subscribe(fn) {

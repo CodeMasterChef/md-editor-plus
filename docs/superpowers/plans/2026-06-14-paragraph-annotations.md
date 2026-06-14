@@ -92,17 +92,19 @@ describe('AnnotationStore', () => {
     expect(s.list()).toEqual([{ id: 'a1', from: 13, to: 23, comment: 'shift' }]);
   });
 
-  test('subscribe fires on every mutation', () => {
+  test('subscribe fires on every state-changing mutation; unsubscribe stops it', () => {
     const s = createAnnotationStore();
     const fn = jest.fn();
     const off = s.subscribe(fn);
-    s.add(1, 2, 'a');
-    s.update('a1', 'b');
-    s.remove('a1');
-    s.clear();
+    s.add(1, 2, 'a');     // emit 1
+    s.add(3, 4, 'b');     // emit 2
+    s.update('a1', 'x');  // emit 3
+    s.clear();            // emit 4 (store was non-empty)
+    expect(fn).toHaveBeenCalledTimes(4);
+    s.clear();            // no-op on empty store -> no emit (guarded)
     expect(fn).toHaveBeenCalledTimes(4);
     off();
-    s.add(3, 4, 'c');
+    s.add(5, 6, 'c');     // unsubscribed -> no emit
     expect(fn).toHaveBeenCalledTimes(4);
   });
 });

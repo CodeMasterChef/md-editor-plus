@@ -1057,7 +1057,7 @@ function init(): void {
               const comment = await promptComment({ x, y });
               if (comment) {
                 store.add(from, to, comment);
-                ed.view.dispatch(ed.state.tr.setMeta('mdep-annotation-refresh', true));
+                // Decoration refresh is handled centrally via store.subscribe in editor.ts.
                 panel.setVisible(true);
               }
             }

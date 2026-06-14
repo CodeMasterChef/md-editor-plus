@@ -24,7 +24,7 @@ import Toggle from './extensions/toggle';
 import BlockDirection from './extensions/blockDirection';
 import BlockOutline from './extensions/outline';
 import { createAnnotationStore, AnnotationStore } from './annotationStore';
-import { createAnnotationExtension } from './annotationExtension';
+import { createAnnotationExtension, ANNOTATION_REFRESH } from './annotationExtension';
 import SmartTypography from './extensions/smartTypography';
 import { createBubbleMenu } from './bubbleMenu';
 import { createBlockHandle } from './blockHandle';
@@ -164,6 +164,13 @@ export function createEditor(
   }, 500);
 
   createBubbleMenu(_editor, _annotationStore);
+  // Single source of truth for refreshing decorations after a store mutation.
+  // map() runs inside the plugin's apply(); never re-dispatch for it.
+  _annotationStore.subscribe((origin) => {
+    if (origin === 'map') return;            // map() runs inside apply(); never re-dispatch
+    if (!_editor || _editor.isDestroyed) return;
+    _editor.view.dispatch(_editor.state.tr.setMeta(ANNOTATION_REFRESH, true));
+  });
   createBlockHandle(_editor);
   notifyFrontmatterChange();
   return _editor;

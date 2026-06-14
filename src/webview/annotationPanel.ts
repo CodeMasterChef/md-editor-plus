@@ -74,8 +74,9 @@ export function createAnnotationPanel(opts: {
     const a = store.list().find((x) => x.id === id);
     if (!a) return;
     try {
-      editor.commands.setTextSelection({ from: a.from, to: a.to });
-      const dom = editor.view.domAtPos(a.from);
+      const size = editor.state.doc.content.size;
+      const pos = Math.max(0, Math.min(a.from, size));
+      const dom = editor.view.domAtPos(pos);
       const node = (dom.node.nodeType === 1 ? dom.node : dom.node.parentElement) as HTMLElement | null;
       node?.scrollIntoView({ behavior: 'smooth', block: 'center' });
     } catch { /* position may be stale; ignore */ }

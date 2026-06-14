@@ -728,8 +728,7 @@ export function createBubbleMenu(editor: Editor, annotationStore: AnnotationStor
         const comment = await promptComment({ x, y });
         if (comment) {
           annotationStore.add(from, to, comment);
-          // Force a decoration rebuild and open the panel.
-          editor.view.dispatch(editor.state.tr.setMeta('mdep-annotation-refresh', true));
+          // Decoration refresh is handled centrally via store.subscribe in editor.ts.
           document.dispatchEvent(new CustomEvent('mdep:open-annotations'));
         }
         return;

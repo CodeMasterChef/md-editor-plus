@@ -61,6 +61,15 @@ describe('AnnotationStore', () => {
     s.add(5, 6, 'c');     // unsubscribed -> no emit
     expect(fn).toHaveBeenCalledTimes(4);
   });
+
+  test('emits origin "user" for mutations and "map" for remapping', () => {
+    const s = createAnnotationStore();
+    const seen: string[] = [];
+    s.subscribe((origin) => seen.push(origin));
+    s.add(1, 5, 'a');                 // 'user'
+    s.map((pos) => pos + 1);          // 'map'
+    expect(seen).toEqual(['user', 'map']);
+  });
 });
 
 describe('serializeAnnotations', () => {
