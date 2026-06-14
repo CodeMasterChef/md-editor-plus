@@ -84,6 +84,7 @@ const ICO = {
   board: `<svg width="20" height="20" viewBox="0 0 256 256" fill="currentColor"><path d="M216,40H40A16,16,0,0,0,24,56V200a16,16,0,0,0,16,16H216a16,16,0,0,0,16-16V56A16,16,0,0,0,216,40ZM104,200H40V56h64Zm32-144v144H120V56Zm80,0V200H152V56Z"/></svg>`,
   whiteboard: `<svg width="20" height="20" viewBox="0 0 256 256" fill="currentColor"><path d="M240,192h-8V56a16,16,0,0,0-16-16H40A16,16,0,0,0,24,56V192H16a8,8,0,0,0,0,16H240a8,8,0,0,0,0-16ZM40,56H216V192H200V168a8,8,0,0,0-8-8H120a8,8,0,0,0-8,8v24H72V88H184v48a8,8,0,0,0,16,0V80a8,8,0,0,0-8-8H64a8,8,0,0,0-8,8V192H40ZM184,192H128V176h56Z"/></svg>`,
   trash: `<svg width="20" height="20" viewBox="0 0 256 256" fill="currentColor"><path d="M216 48h-40v-8a24 24 0 0 0-24-24h-48a24 24 0 0 0-24 24v8H40a8 8 0 0 0 0 16h8v144a16 16 0 0 0 16 16h128a16 16 0 0 0 16-16V64h8a8 8 0 0 0 0-16ZM96 40a8 8 0 0 1 8-8h48a8 8 0 0 1 8 8v8H96Zm16 152a8 8 0 0 1-16 0v-72a8 8 0 0 1 16 0Zm48 0a8 8 0 0 1-16 0v-72a8 8 0 0 1 16 0Z"/></svg>`,
+  comment: `<svg width="20" height="20" viewBox="0 0 256 256" fill="currentColor"><path d="M128,28A100,100,0,0,0,39.57,174.06l-11.54,34.6a12,12,0,0,0,15.18,15.18l34.6-11.54A100,100,0,1,0,128,28Zm0,176a76.18,76.18,0,0,1-39.4-11,12,12,0,0,0-9.78-1.24l-23.65,7.89,7.89-23.65a12,12,0,0,0-1.24-9.78A76,76,0,1,1,128,204Z"/></svg>`,
 };
 
 export const BLOCK_DEFS: BlockDef[] = [
@@ -455,6 +456,11 @@ export function createBlockPicker(editor: Editor): BlockPicker {
       const sep = document.createElement('div');
       sep.className = 'block-picker-sep';
       list.appendChild(sep);
+      const comment = document.createElement('div');
+      comment.className = 'block-picker-item';
+      comment.innerHTML = `<span class="block-picker-icon">${ICO.comment}</span><span class="block-picker-label">Comment</span>`;
+      comment.addEventListener('mousedown', (e) => { e.preventDefault(); commentActiveBlock(); });
+      list.appendChild(comment);
       const del = document.createElement('div');
       del.className = 'block-picker-item block-picker-delete';
       del.innerHTML = `<span class="block-picker-icon">${ICO.trash}</span><span class="block-picker-label">Delete</span>`;
@@ -464,6 +470,18 @@ export function createBlockPicker(editor: Editor): BlockPicker {
 
     activeIdx = 0;
     updateActive();
+  }
+
+  // Annotate the whole block: dispatch its inline range and let index.ts open
+  // the comment popover (it owns the annotation store + promptComment flow).
+  function commentActiveBlock(): void {
+    const ab = context.activeBlock;
+    if (!ab) { close(); return; }
+    let from = ab.blockPos + 1;
+    let to = ab.blockEnd - 1;
+    if (from >= to) { from = ab.blockPos; to = ab.blockEnd; } // atom node (board/hr/image)
+    close();
+    document.dispatchEvent(new CustomEvent('mdep:comment-range', { detail: { from, to } }));
   }
 
   function deleteActiveBlock(): void {

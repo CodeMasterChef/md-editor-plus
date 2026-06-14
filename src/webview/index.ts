@@ -1035,6 +1035,26 @@ function init(): void {
           });
           annBtn?.addEventListener('click', () => bar.toggle());
           document.addEventListener('mdep:open-annotations', () => bar.setVisible(true));
+          // Comment a whole block from the drag-handle (⠿) menu.
+          document.addEventListener('mdep:comment-range', async (e) => {
+            const d = (e as CustomEvent).detail as { from?: number; to?: number } | undefined;
+            const ed = getEditor();
+            if (!ed || d?.from == null || d?.to == null) return;
+            const { from, to } = d;
+            if (from >= to) return;
+            let x = window.innerWidth / 2, y = window.innerHeight / 2;
+            try {
+              const c1 = ed.view.coordsAtPos(from);
+              const c2 = ed.view.coordsAtPos(to);
+              x = Math.min(c1.left, c2.left);
+              y = Math.max(c1.bottom, c2.bottom) + 8;
+            } catch { /* fall back to centre */ }
+            const comment = await promptComment({ x, y });
+            if (comment) {
+              store.add(from, to, comment);
+              bar.setVisible(true);
+            }
+          });
           // Click a badge in the document → edit/delete that annotation.
           document.addEventListener('mdep:focus-annotation', async (e) => {
             const detail = (e as CustomEvent).detail as { id?: string; x?: number; y?: number } | undefined;
