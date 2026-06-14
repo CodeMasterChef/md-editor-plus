@@ -23,6 +23,8 @@ import Board, { preprocessMarkdownBoards } from './extensions/board';
 import Toggle from './extensions/toggle';
 import BlockDirection from './extensions/blockDirection';
 import BlockOutline from './extensions/outline';
+import { createAnnotationStore, AnnotationStore } from './annotationStore';
+import { createAnnotationExtension } from './annotationExtension';
 import SmartTypography from './extensions/smartTypography';
 import { createBubbleMenu } from './bubbleMenu';
 import { createBlockHandle } from './blockHandle';
@@ -37,6 +39,12 @@ let _editDebounce: FlushableDebounce | null = null;
 let _frontmatter = '';
 let _onFrontmatterChange: ((info: { lines: number; kind: 'yaml' | 'toml' | 'none' }) => void) | null = null;
 let _mediaBaseUri = '';
+
+const _annotationStore: AnnotationStore = createAnnotationStore();
+
+export function getAnnotationStore(): AnnotationStore {
+  return _annotationStore;
+}
 
 export function setMediaBaseUri(uri: string): void {
   _mediaBaseUri = uri || '';
@@ -126,6 +134,12 @@ export function createEditor(
       BlockOutline,
       SmartTypography,
       SearchExtension,
+      createAnnotationExtension({
+        store: _annotationStore,
+        onBadgeClick: (id) => {
+          document.dispatchEvent(new CustomEvent('mdep:focus-annotation', { detail: { id } }));
+        },
+      }),
       GlobalDragHandle.configure({ dragHandleWidth: 48 }),
     ],
     editorProps: {
@@ -149,7 +163,7 @@ export function createEditor(
     onChange(_frontmatter + markdown);
   }, 500);
 
-  createBubbleMenu(_editor);
+  createBubbleMenu(_editor, _annotationStore);
   createBlockHandle(_editor);
   notifyFrontmatterChange();
   return _editor;
