@@ -5,6 +5,8 @@ import { AI_TRANSFORMS, type AiTarget } from './aiTransforms';
 import { createAiTransformPanel } from './aiTransformPanel';
 import { summarizeSelection, locateAnchors, truncateAnchor } from './aiSelection';
 import { getDocumentPath } from './docContext';
+import { promptComment } from './annotationInput';
+import type { AnnotationStore } from './annotationStore';
 
 // All paths verified from @phosphor-icons/core assets/bold/
 const P = {
@@ -23,6 +25,7 @@ const P = {
   listChecks:    'M228,128a12,12,0,0,1-12,12H128a12,12,0,0,1,0-24h88A12,12,0,0,1,228,128ZM128,76h88a12,12,0,0,0,0-24H128a12,12,0,0,0,0,24Zm88,104H128a12,12,0,0,0,0,24h88a12,12,0,0,0,0-24ZM79.51,39.51,56,63l-7.51-7.52a12,12,0,0,0-17,17l16,16a12,12,0,0,0,17,0l32-32a12,12,0,0,0-17-17Zm0,64L56,127l-7.51-7.52a12,12,0,1,0-17,17l16,16a12,12,0,0,0,17,0l32-32a12,12,0,0,0-17-17Zm0,64L56,191l-7.51-7.52a12,12,0,1,0-17,17l16,16a12,12,0,0,0,17,0l32-32a12,12,0,0,0-17-17Z',
   quotes:        'M100,52H40A20,20,0,0,0,20,72v64a20,20,0,0,0,20,20H96v4a28,28,0,0,1-28,28,12,12,0,0,0,0,24,52.06,52.06,0,0,0,52-52V72A20,20,0,0,0,100,52Zm-4,80H44V76H96ZM216,52H156a20,20,0,0,0-20,20v64a20,20,0,0,0,20,20h56v4a28,28,0,0,1-28,28,12,12,0,0,0,0,24,52.06,52.06,0,0,0,52-52V72A20,20,0,0,0,216,52Zm-4,80H160V76h52Z',
   minus:         'M228,128a12,12,0,0,1-12,12H40a12,12,0,0,1,0-24H216A12,12,0,0,1,228,128Z',
+  chatBubble:    'M128,28A100,100,0,0,0,39.57,174.06l-11.54,34.6a12,12,0,0,0,15.18,15.18l34.6-11.54A100,100,0,1,0,128,28Zm0,176a76.18,76.18,0,0,1-39.4-11,12,12,0,0,0-9.78-1.24l-23.65,7.89,7.89-23.65a12,12,0,0,0-1.24-9.78A76,76,0,1,1,128,204Z',
 } as const;
 
 function svg(path: string, size = 20): string {
@@ -203,6 +206,7 @@ function buildEl(): HTMLElement {
       ${DIV}
       <button class="bm-btn" data-action="more" data-tip="Turn into another block">${svg(P.dotsThree, 22)}</button>
       <button class="bm-btn bm-ai-btn" data-action="ai" data-tip="Turn into… using AI">${svg('M128 24 L150 106 L232 128 L150 150 L128 232 L106 150 L24 128 L106 106 Z', 20)}</button>
+      <button class="bm-btn" data-action="comment" data-tip-html="Comment<kbd>⌘⌥M</kbd>">${svg(P.chatBubble)}</button>
     </div>
     <div class="bubble-into hidden" id="bm-into">
       <div class="bubble-into-search">
@@ -234,7 +238,7 @@ function buildEl(): HTMLElement {
   return el;
 }
 
-export function createBubbleMenu(editor: Editor): void {
+export function createBubbleMenu(editor: Editor, annotationStore: AnnotationStore): void {
   const el           = buildEl();
   const colorSwatch  = el.querySelector<HTMLElement>('#bm-color-swatch')!;
   const hlSwatch     = el.querySelector<HTMLElement>('#bm-hl-swatch')!;
@@ -653,7 +657,7 @@ export function createBubbleMenu(editor: Editor): void {
     }
   }
 
-  el.addEventListener('click', e => {
+  el.addEventListener('click', async e => {
     const target = e.target as HTMLElement;
 
     // AI turn-into item clicked? (from either the ✨ panel or the "Using AI" group)
@@ -709,6 +713,26 @@ export function createBubbleMenu(editor: Editor): void {
         if (!open) { aiPanel.classList.remove('hidden'); aiBtn.classList.add('active'); }
         else closeAi();
         break;
+      }
+      case 'comment': {
+        const { from, to } = editor.state.selection;
+        if (from === to) return;
+        const sel = window.getSelection();
+        let x = window.innerWidth / 2;
+        let y = window.innerHeight / 2;
+        if (sel && sel.rangeCount > 0) {
+          const r = sel.getRangeAt(0).getBoundingClientRect();
+          x = r.left;
+          y = r.bottom + 8;
+        }
+        const comment = await promptComment({ x, y });
+        if (comment) {
+          annotationStore.add(from, to, comment);
+          // Force a decoration rebuild and open the panel.
+          editor.view.dispatch(editor.state.tr.setMeta('mdep-annotation-refresh', true));
+          document.dispatchEvent(new CustomEvent('mdep:open-annotations'));
+        }
+        return;
       }
       case 'more': {
         closeSwatch();
