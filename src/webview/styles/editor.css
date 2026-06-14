@@ -5036,3 +5036,20 @@ html.theme-dark .ProseMirror .mb-vTb-grid.mb-vTb-active {
   border: 1px solid var(--border, #ddd); background: transparent; color: #e55757;
 }
 .mdep-annotation-input-del:hover { background: rgba(229, 87, 87, 0.12); }
+
+/* Custom right-click context menu (Comment + Cut/Copy/Paste). */
+.mdep-context-menu {
+  position: fixed; z-index: 10000; min-width: 168px; padding: 4px;
+  background: var(--bg-elev, #fff); color: var(--fg, #111);
+  border: 1px solid var(--border, #ddd); border-radius: 8px;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.28);
+}
+.mdep-context-menu.hidden { display: none; }
+.mdep-ctx-item {
+  display: flex; align-items: center; gap: 8px; width: 100%;
+  padding: 6px 10px; border: none; border-radius: 6px; cursor: pointer;
+  background: transparent; color: inherit; font: inherit; font-size: 13px; text-align: left;
+}
+.mdep-ctx-item:hover { background: rgba(127, 127, 127, 0.16); }
+.mdep-ctx-ico { display: inline-flex; width: 16px; height: 16px; flex: 0 0 16px; opacity: 0.85; }
+.mdep-ctx-sep { height: 1px; margin: 4px 6px; background: var(--border, rgba(127, 127, 127, 0.25)); }

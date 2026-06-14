@@ -28,6 +28,7 @@ import { createAnnotationExtension, ANNOTATION_REFRESH } from './annotationExten
 import SmartTypography from './extensions/smartTypography';
 import { createBubbleMenu } from './bubbleMenu';
 import { createBlockHandle } from './blockHandle';
+import { createContextMenu } from './contextMenu';
 import { splitFrontmatter, frontmatterInfo } from './frontmatter';
 import SearchExtension from './searchExtension';
 import { createFlushableDebounce, FlushableDebounce } from './flushableDebounce';
@@ -174,6 +175,7 @@ export function createEditor(
     _editor.view.dispatch(_editor.state.tr.setMeta(ANNOTATION_REFRESH, true));
   });
   createBlockHandle(_editor);
+  createContextMenu(_editor);
   notifyFrontmatterChange();
   return _editor;
 }
