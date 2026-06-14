@@ -185,6 +185,11 @@
           "description": "Smart typography: replace typed sequences like -> with arrows (→), -- with em dash (—), ... with ellipsis (…) as you type. Suppressed inside code."
         }
       }
+    },
+    "configurationDefaults": {
+      "workbench.editorAssociations": {
+        "{git,gitlens,git-graph,pr,vscode-local-history}:/**/*.{md,markdown,mdown,mkd,mdx}": "default"
+      }
     }
   },
   "scripts": {
