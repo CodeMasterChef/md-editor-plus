@@ -57,9 +57,13 @@ export function createAnnotationBar(opts: {
       const n = store.list().length;
       const text = serializeAnnotations(store.list(), { path: getDocumentPath(), quoteAt });
       if (!text) return;
-      copyToClipboard(text, `Copied ${n} annotation${n === 1 ? '' : 's'}`);
+      copyToClipboard(text, `Copied ${n} annotation${n === 1 ? '' : 's'} — cleared`);
+      // By default, copying hands the annotations off to the AI and clears them.
+      store.clear();
     } else if (act === 'clear') {
-      if (store.list().length && confirm('Clear all annotations?')) store.clear();
+      // Note: window.confirm() is disabled in VS Code webviews, so we clear
+      // directly. Annotations are ephemeral, so this is low-stakes.
+      store.clear();
     }
   });
 
