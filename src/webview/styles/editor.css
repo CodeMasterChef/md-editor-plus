@@ -4979,3 +4979,74 @@ html.theme-dark .ProseMirror .mb-vTb-grid.mb-vTb-active {
   background: var(--toolbar-btn-hover);
   color: var(--text-primary);
 }
+
+/* ---- Annotations (review-and-copy-to-AI layer) ---- */
+.mdep-annotation-hl {
+  background: rgba(74, 158, 232, 0.18);
+  border-bottom: 2px solid rgba(74, 158, 232, 0.75);
+  border-radius: 2px;
+  transition: background 0.2s ease;
+}
+.mdep-annotation-flash { background: rgba(74, 158, 232, 0.45) !important; }
+.mdep-annotation-badge {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 16px; height: 16px; padding: 0 4px; margin-right: 2px;
+  font-size: 10px; font-weight: 600; line-height: 1;
+  color: #fff; background: #4a9ee8; border-radius: 8px;
+  vertical-align: super; cursor: pointer; user-select: none;
+}
+.mdep-annotation-input {
+  position: fixed; z-index: 9999; width: 280px;
+  background: var(--bg-elev, #fff); color: var(--fg, #111);
+  border: 1px solid var(--border, #ddd); border-radius: 8px;
+  box-shadow: 0 8px 28px rgba(0,0,0,0.25); padding: 6px;
+}
+.mdep-annotation-input-field {
+  width: 100%; min-height: 52px; resize: vertical; box-sizing: border-box;
+  border: none; outline: none; background: transparent; color: inherit;
+  font: inherit; font-size: 13px;
+}
+.annotation-panel {
+  position: fixed; top: 44px; right: 0; bottom: 0; width: 320px; z-index: 50;
+  background: var(--bg-elev, #fff); color: var(--fg, #111);
+  border-left: 1px solid var(--border, #e3e3e3);
+  display: flex; flex-direction: column; overflow: hidden;
+}
+.annotation-panel.hidden { display: none; }
+.mdep-ann-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 10px 12px; border-bottom: 1px solid var(--border, #eee);
+}
+.mdep-ann-title { font-weight: 600; font-size: 13px; }
+.mdep-ann-head-actions { display: flex; gap: 6px; }
+.mdep-ann-copy, .mdep-ann-clear {
+  font-size: 12px; padding: 3px 8px; border-radius: 6px; cursor: pointer;
+  border: 1px solid var(--border, #ddd); background: transparent; color: inherit;
+}
+.mdep-ann-copy { background: #4a9ee8; color: #fff; border-color: #4a9ee8; }
+.mdep-ann-list { overflow-y: auto; padding: 8px; display: flex; flex-direction: column; gap: 10px; }
+.mdep-ann-row { border: 1px solid var(--border, #eee); border-radius: 8px; padding: 8px; }
+.mdep-ann-row-top { display: flex; align-items: flex-start; gap: 6px; }
+.mdep-ann-badge-sm {
+  flex: 0 0 auto; min-width: 16px; height: 16px; padding: 0 4px;
+  display: inline-flex; align-items: center; justify-content: center;
+  font-size: 10px; font-weight: 600; color: #fff; background: #4a9ee8; border-radius: 8px;
+}
+.mdep-ann-quote { flex: 1 1 auto; font-size: 12px; opacity: 0.8; }
+.mdep-ann-del {
+  flex: 0 0 auto; border: none; background: transparent; color: inherit;
+  cursor: pointer; font-size: 16px; line-height: 1; opacity: 0.6;
+}
+.mdep-ann-del:hover { opacity: 1; }
+.mdep-ann-comment {
+  width: 100%; box-sizing: border-box; margin-top: 6px; resize: vertical;
+  border: 1px solid var(--border, #ddd); border-radius: 6px; padding: 4px 6px;
+  font: inherit; font-size: 13px; background: transparent; color: inherit;
+}
+.mdep-ann-empty { padding: 16px 12px; font-size: 13px; opacity: 0.65; }
+.mdep-ann-count {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 14px; height: 14px; padding: 0 3px; margin-left: 2px;
+  font-size: 9px; font-weight: 700; color: #fff; background: #4a9ee8; border-radius: 7px;
+}
+.mdep-ann-count.hidden { display: none; }

@@ -92,9 +92,9 @@ export function createAnnotationPanel(opts: {
     const act = t.closest<HTMLElement>('[data-act]')?.dataset.act;
     if (act === 'copy') {
       const text = serializeAnnotations(store.list(), { path: getDocumentPath(), quoteAt });
-      if (!text) { copyToClipboard(''); return; }
-      copyToClipboard(text);
-      // copyToClipboard posts {type:'copyText'}; label is added in Task 7.
+      const n = store.list().length;
+      if (!text) return;
+      copyToClipboard(text, `Copied ${n} annotation${n === 1 ? '' : 's'}`);
       return;
     }
     if (act === 'clear') {

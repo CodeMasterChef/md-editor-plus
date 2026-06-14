@@ -2,7 +2,7 @@ import lightCss from './styles/notion-light.css';
 import darkCss from './styles/notion-dark.css';
 import editorCss from './styles/editor.css';
 import boardCss from './styles/board.css';
-import { createEditor, updateContent, createSourceEditor, updateSourceContent, getSourceMarkdown, getCurrentMarkdown, setFrontmatterChangeListener, setMediaBaseUri, setReadOnly, getEditor, getSourceEditor, flushPendingEdit } from './editor';
+import { createEditor, updateContent, createSourceEditor, updateSourceContent, getSourceMarkdown, getCurrentMarkdown, setFrontmatterChangeListener, setMediaBaseUri, setReadOnly, getEditor, getSourceEditor, flushPendingEdit, getAnnotationStore } from './editor';
 import { decideExternalUpdate } from './syncGuard';
 import { createFindBar, FindBar } from './findBar';
 import { initTheme, applyTheme, ThemeSetting } from './theme';
@@ -11,6 +11,8 @@ import { setSmartTypographyEnabled } from './extensions/smartTypography';
 import { initTooltips } from './tooltip';
 import { buildHtmlExport } from './exportHtml';
 import { createOutlinePanel, OutlinePanel } from './outlinePanel';
+import { createAnnotationPanel, AnnotationPanel } from './annotationPanel';
+import { promptComment } from './annotationInput';
 import { initBoardSidePanel } from './boardSidePanel';
 import { setDocumentPath, setWorkspaceName } from './docContext';
 import { createSkillPanel } from './skillPanel';
@@ -1018,6 +1020,51 @@ function init(): void {
         }
       } catch (err) {
         console.error('[md-editor-plus] outline init failed', err);
+      }
+
+      try {
+        const annBtn = document.getElementById('annotation-btn') as HTMLElement | null;
+        const annPanel = document.getElementById('annotation-panel') as HTMLElement | null;
+        if (annBtn && annPanel) {
+          const store = getAnnotationStore();
+          const panel: AnnotationPanel = createAnnotationPanel({
+            editor: editorInstance,
+            panelEl: annPanel,
+            toggleBtn: annBtn,
+            store,
+          });
+          annBtn.addEventListener('click', () => panel.toggle());
+          document.addEventListener('mdep:open-annotations', () => panel.setVisible(true));
+          document.addEventListener('mdep:focus-annotation', (e) => {
+            const id = (e as CustomEvent).detail?.id as string | undefined;
+            if (id) panel.focus(id);
+          });
+          document.addEventListener('keydown', async (e) => {
+            const mod = e.metaKey || e.ctrlKey;
+            if (mod && e.altKey && (e.key === 'm' || e.key === 'M' || e.code === 'KeyM')) {
+              const ed = getEditor();
+              if (!ed) return;
+              const { from, to } = ed.state.selection;
+              if (from === to) return;
+              e.preventDefault();
+              let x = window.innerWidth / 2, y = window.innerHeight / 2;
+              try {
+                const start = ed.view.coordsAtPos(from);
+                const end = ed.view.coordsAtPos(to);
+                x = Math.min(start.left, end.left);
+                y = Math.max(start.bottom, end.bottom) + 8;
+              } catch { /* fall back to centre */ }
+              const comment = await promptComment({ x, y });
+              if (comment) {
+                store.add(from, to, comment);
+                ed.view.dispatch(ed.state.tr.setMeta('mdep-annotation-refresh', true));
+                panel.setVisible(true);
+              }
+            }
+          });
+        }
+      } catch (err) {
+        console.error('[md-editor-plus] annotation init failed', err);
       }
       } catch (err) {
         console.error('[md-editor-plus] INIT FAILED', err);

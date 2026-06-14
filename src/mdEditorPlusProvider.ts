@@ -672,6 +672,7 @@ export class MdEditorPlusProvider implements vscode.CustomTextEditorProvider {
       <button class="seg-btn" data-view="source" data-tip="Source view — raw markdown">${iCode}<span class="seg-label">Code</span><span class="fm-badge hidden" id="fm-badge" aria-hidden="true"></span></button>
     </div>
     <button class="toolbar-icon" id="outline-btn" data-tip="Outline (⌘⇧O)">${iOutline}</button>
+    <button class="toolbar-icon" id="annotation-btn" data-tip="Annotations (⌘⌥M)"><svg width="18" height="18" viewBox="0 0 256 256" fill="currentColor"><path d="M128,28A100,100,0,0,0,39.57,174.06l-11.54,34.6a12,12,0,0,0,15.18,15.18l34.6-11.54A100,100,0,1,0,128,28Z"/></svg><span class="mdep-ann-count hidden"></span></button>
     <span class="toolbar-filename" id="toolbar-filename" title="${fileName}">${fileName}</span>
     <span class="save-indicator" id="save-indicator" aria-live="polite"></span>
     <span class="toolbar-spacer"></span>
@@ -813,6 +814,7 @@ export class MdEditorPlusProvider implements vscode.CustomTextEditorProvider {
     <button class="settings-action act-blocks-skill" data-tip="Generate a Claude skill that teaches your AI this app's block grammar">${iSparkle}<span class="settings-action-label">Create blocks skill…</span></button>
   </div>
   <div class="outline-panel hidden" id="outline-panel"></div>
+  <aside class="annotation-panel hidden" id="annotation-panel"></aside>
   <div class="actions-submenu hidden" id="actions-submenu-export" role="menu">
     <button class="settings-action act-export-html" data-tip="Save the rendered view as a standalone HTML file">${iDownload}<span class="settings-action-label">Export to HTML</span></button>
     <button class="settings-action act-export-pdf" data-tip="Render to PDF — uses headless Chrome/Edge if installed, otherwise opens the system print dialog">${iPdf}<span class="settings-action-label">Export to PDF</span></button>
