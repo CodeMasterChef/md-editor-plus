@@ -66,22 +66,67 @@
             "filenamePattern": "*.mdx"
           }
         ],
-        "priority": "default"
+        "priority": "option"
       }
     ],
     "commands": [
       {
         "command": "mdEditorPlus.openSourceView",
-        "title": "MD Editor Plus: Open Source View"
+        "title": "Open in Text View",
+        "category": "MD Editor Plus",
+        "icon": "$(code)"
       },
       {
         "command": "mdEditorPlus.openBlockView",
-        "title": "MD Editor Plus: Open Block View"
+        "title": "Open in Notion View",
+        "category": "MD Editor Plus",
+        "icon": "$(book)"
       }
     ],
+    "menus": {
+      "editor/context": [
+        {
+          "command": "mdEditorPlus.openBlockView",
+          "when": "editorTextFocus && !activeCustomEditorId && (resourceExtname == .md || resourceExtname == .markdown || resourceExtname == .mdown || resourceExtname == .mkd || resourceExtname == .mdx)",
+          "group": "navigation@10"
+        }
+      ],
+      "explorer/context": [
+        {
+          "command": "mdEditorPlus.openBlockView",
+          "when": "resourceExtname == .md || resourceExtname == .markdown || resourceExtname == .mdown || resourceExtname == .mkd || resourceExtname == .mdx",
+          "group": "navigation@10"
+        }
+      ],
+      "editor/title": [
+        {
+          "command": "mdEditorPlus.openBlockView",
+          "when": "!activeCustomEditorId && (resourceExtname == .md || resourceExtname == .markdown || resourceExtname == .mdown || resourceExtname == .mkd || resourceExtname == .mdx)",
+          "group": "navigation@1"
+        },
+        {
+          "command": "mdEditorPlus.openSourceView",
+          "when": "activeCustomEditorId == md-editor-plus.editor",
+          "group": "navigation@1"
+        }
+      ]
+    },
     "configuration": {
       "title": "MD Editor Plus",
       "properties": {
+        "mdEditorPlus.defaultView": {
+          "type": "string",
+          "enum": [
+            "markdown",
+            "notion"
+          ],
+          "enumDescriptions": [
+            "Markdown — open markdown files in VS Code's native text editor",
+            "Notion — open markdown files in the Notion-style block editor"
+          ],
+          "default": "markdown",
+          "description": "Which editor opens markdown files by default. You can switch any single file at any time via right-click → Open in Notion View."
+        },
         "mdEditorPlus.theme": {
           "type": "string",
           "enum": [
