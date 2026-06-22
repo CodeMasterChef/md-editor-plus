@@ -1,7 +1,8 @@
 import * as vscode from 'vscode';
 import { MdEditorPlusProvider } from './mdEditorPlusProvider';
 import { isMarkdownPath } from './openPath';
-import { shouldAutoOpenNotion, DefaultView } from './defaultView';
+import { shouldAutoOpenNotion } from './defaultView';
+import type { DefaultView } from './defaultView';
 
 const NOTION_EDITOR = 'md-editor-plus.editor';
 
@@ -44,10 +45,17 @@ export function activate(context: vscode.ExtensionContext): void {
     }),
   );
 
+  context.subscriptions.push(
+    vscode.workspace.onDidCloseTextDocument((doc) => {
+      forcedText.delete(doc.uri.toString());
+    }),
+  );
+
   // When defaultView === 'notion', reopen markdown text editors in the Notion editor.
   context.subscriptions.push(
     vscode.window.onDidChangeActiveTextEditor((editor) => {
       if (!editor) return;
+      if (editor.document.uri.scheme !== 'file') return;
       const uri = editor.document.uri;
       if (
         shouldAutoOpenNotion({
