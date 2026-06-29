@@ -5,6 +5,7 @@ import * as fs from 'fs';
 import { spawn } from 'child_process';
 import { MARKDOWN_EXTENSIONS, isMarkdownPath, resolveClipboardCandidates } from './openPath';
 import { ApplyingTracker } from './applyingTracker';
+import { inlineImages } from './exportImages';
 
 const CHROME_PATHS: Record<NodeJS.Platform, string[]> = {
   darwin: [
@@ -41,6 +42,10 @@ function findChromiumBinary(): string | null {
     } catch { /* try next */ }
   }
   return null;
+}
+
+function inlineWebviewImages(html: string, webview: vscode.Webview, docDir: vscode.Uri): string {
+  return inlineImages(html, webview.asWebviewUri(docDir).toString(), docDir.fsPath);
 }
 
 function renderHtmlToPdf(chromePath: string, htmlPath: string, pdfPath: string): Promise<void> {
@@ -476,13 +481,15 @@ export class MdEditorPlusProvider implements vscode.CustomTextEditorProvider {
         return;
       }
       if (msg.type === 'exportPdf') {
-        const html = (msg as unknown as { html?: unknown }).html;
+        const rawHtml = (msg as unknown as { html?: unknown }).html;
         const fname = (msg as unknown as { filename?: unknown }).filename;
-        if (typeof html !== 'string' || !html) return;
+        if (typeof rawHtml !== 'string' || !rawHtml) return;
         const base = (typeof fname === 'string' ? fname : 'document.md')
           .replace(/\.[^.]+$/, '')
           .replace(/[^a-zA-Z0-9_.\-]+/g, '_') || 'document';
         const docDir = vscode.Uri.joinPath(document.uri, '..');
+        // Inline webview-resolved images so headless Chrome / the browser can render them.
+        const html = inlineWebviewImages(rawHtml, webviewPanel.webview, docDir);
 
         const chromePath = findChromiumBinary();
         if (chromePath) {
@@ -533,10 +540,12 @@ export class MdEditorPlusProvider implements vscode.CustomTextEditorProvider {
         );
       }
       if (msg.type === 'exportHtml') {
-        const html = (msg as unknown as { html?: unknown }).html;
-        if (typeof html !== 'string' || !html) return;
+        const rawHtml = (msg as unknown as { html?: unknown }).html;
+        if (typeof rawHtml !== 'string' || !rawHtml) return;
         const base = (document.uri.path.split('/').pop() ?? 'document.md').replace(/\.[^.]+$/, '');
         const dir = vscode.Uri.joinPath(document.uri, '..');
+        // Inline webview-resolved images so the saved HTML is self-contained.
+        const html = inlineWebviewImages(rawHtml, webviewPanel.webview, dir);
         const defaultUri = vscode.Uri.joinPath(dir, `${base}.html`);
         const target = await vscode.window.showSaveDialog({
           defaultUri,
